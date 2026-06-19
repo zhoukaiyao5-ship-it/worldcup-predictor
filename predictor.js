@@ -43,6 +43,11 @@ const TEAM_DATABASE = {
     '土耳其':   { att: 1.70, def: 1.00, style: 'attack',    form: 1.7, setPiece: 0.30, phys: 7.5, depth: 7.0, fifa: 1615 },
     '苏格兰':   { att: 1.45, def: 0.82, style: 'balanced',  form: 1.5, setPiece: 0.33, phys: 7.8, depth: 6.8, fifa: 1608 },
     '匈牙利':   { att: 1.55, def: 0.88, style: 'counter',   form: 1.6, setPiece: 0.32, phys: 7.8, depth: 6.8, fifa: 1600 },
+    '罗马尼亚': { att: 1.35, def: 0.82, style: 'counter',   form: 1.4, setPiece: 0.32, phys: 7.8, depth: 6.5, fifa: 1590 },
+    '斯洛文尼亚': { att: 1.30, def: 0.78, style: 'defensive', form: 1.3, setPiece: 0.30, phys: 7.5, depth: 6.2, fifa: 1575 },
+    '斯洛伐克': { att: 1.35, def: 0.85, style: 'counter',   form: 1.4, setPiece: 0.30, phys: 7.5, depth: 6.3, fifa: 1580 },
+    '格鲁吉亚': { att: 1.25, def: 0.95, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.8, depth: 6.0, fifa: 1510 },
+    '阿尔巴尼亚': { att: 1.20, def: 0.92, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1500 },
 
     // 南美洲
     '哥伦比亚': { att: 1.75, def: 0.85, style: 'attack',    form: 1.8, setPiece: 0.32, phys: 7.8, depth: 7.5, fifa: 1720 },
@@ -754,20 +759,12 @@ class WorldCupPredictor {
             * infoEdgeR.playerImpact
             * infoEdgeR.auxiliaryImpact;
 
-        const clampedExpected = clamp(expected, 0.3, 7.0);
+        let clampedExpected = clamp(expected, 0.3, 7.0);
 
-        // --- 判断大小球 ---
-        const isOver = clampedExpected > this.handicap;
-        const edge = clampedExpected - this.handicap;
+        // --- 暂存纯模型预期 ---
+        const modelPureXG = clampedExpected;
 
-        // --- Sigmoid 置信度 ---
-        const absEdge = Math.abs(edge);
-        const { steepness, midpoint, baseConfidence, consensusWeight, dataQualityWeight } = this.config.confidence;
-
-        // Edge 贡献 (sigmoid)
-        const edgeConf = sigmoid(absEdge, steepness, midpoint);
-
-        // 因子共识度贡献: 计算各因子偏离中性(1.0)的方向一致性
+        // --- 因子共识度 (先算, 贝叶斯融合需要) ---
         const factorValues = [stageF, tacticF, defenseF, marketF, formF, setPieceF, psychF, fatigueR.factor, homeF];
         const bullishFactors = factorValues.filter(v => v > 1.002).length;
         const bearishFactors = factorValues.filter(v => v < 0.998).length;
@@ -776,6 +773,39 @@ class WorldCupPredictor {
         if (totalF > 0) {
             consensus = Math.max(bullishFactors, bearishFactors) / totalF;
         }
+
+        // ============================================================
+        // 贝叶斯先验: 竞彩赔率市场共识作为锚点
+        // 市场已内化所有公开信息 — 模型只在有信息优势时偏离
+        // ============================================================
+        let marketXG = null;
+        let modelTrust = 1.0;
+        let priorBlendNote = '纯模型预测';
+
+        if (this.liveData && this.liveData.data_source === 'lottery'
+            && typeof this.liveData.lottery_expected_goals === 'number'
+            && this.liveData.lottery_expected_goals > 0) {
+
+            marketXG = this.liveData.lottery_expected_goals;
+            const divergence = Math.abs(modelPureXG - marketXG) / Math.max(marketXG, 0.5);
+            const consensusFactor = clamp(consensus, 0.5, 1.0);
+            modelTrust = clamp(consensusFactor * (1 - divergence * 0.6) * 0.45, 0.15, 0.55);
+
+            clampedExpected = marketXG + (modelPureXG - marketXG) * modelTrust;
+            clampedExpected = clamp(clampedExpected, 0.3, 7.0);
+
+            const marketWeight = (1 - modelTrust) * 100;
+            priorBlendNote = `市场锚点${marketXG.toFixed(1)}球 → 模型${modelTrust>0.3?'调整':'微调'} → ${clampedExpected.toFixed(1)}球 (市场${marketWeight.toFixed(0)}%)`;
+        }
+
+        // --- 最终判断大小球 (可能已被贝叶斯先验调整) ---
+        const isOver = clampedExpected > this.handicap;
+        const edge = clampedExpected - this.handicap;
+
+        // --- Sigmoid 置信度 ---
+        const absEdge = Math.abs(edge);
+        const { steepness, midpoint, baseConfidence, consensusWeight, dataQualityWeight } = this.config.confidence;
+        const edgeConf = sigmoid(absEdge, steepness, midpoint);
 
         // 数据质量
         const dataQuality = this.hasLiveData ? (this.liveData?.data_quality ?? 0.5) : 0.3;
@@ -867,7 +897,8 @@ class WorldCupPredictor {
                 signalCount: infoEdgeR.signals.length,
             },
             // 竞彩赔率市场对比 (有赔率数据时才输出)
-            lotteryMarket: this._buildLotteryMarket(isOver, clampedExpected),
+            lotteryMarket: this._buildLotteryMarket(isOver, clampedExpected, marketXG, modelTrust, priorBlendNote),
+            priorBlendNote: priorBlendNote,
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),
@@ -924,13 +955,14 @@ class WorldCupPredictor {
     }
 
     /** 构建赔率市场对比数据 */
-    _buildLotteryMarket(modelIsOver, modelExpected) {
+    _buildLotteryMarket(modelIsOver, modelExpected, marketXGUsed, modelTrustUsed, blendNote) {
         if (!this.liveData || this.liveData.data_source !== 'lottery') return null;
         if (this.liveData.lottery_direction === undefined) return null;
 
         const marketIsOver = this.liveData.lottery_direction === '大球';
-        const marketExpected = this.liveData.lottery_expected_goals || 0;
+        const marketExpected = marketXGUsed || this.liveData.lottery_expected_goals || 0;
         const marketConfidence = this.liveData.lottery_confidence || 0;
+        const trustPct = modelTrustUsed != null ? Math.round((1 - modelTrustUsed) * 100) : 100;
 
         // 模型vs市场一致性
         let agreement;
@@ -945,6 +977,8 @@ class WorldCupPredictor {
             expectedGoals: parseFloat(marketExpected.toFixed(2)),
             confidence: parseFloat(marketConfidence.toFixed(3)),
             agreement,
+            marketWeight: trustPct,
+            blendNote: blendNote || '',
             openness: this.liveData.lottery_openness || 0.5,
             overProb: this.liveData.lottery_over_prob || 0,
             underProb: this.liveData.lottery_under_prob || 0,
@@ -1116,6 +1150,125 @@ class LotteryOddsAnalyzer {
      * @param {Object} oddsData.spf - 胜平负赔率 (可选) { home:2.10, draw:3.20, away:3.50 }
      * @param {Object} oddsData.handicap - 让球胜平负赔率 (可选)
      */
+    /** 已知竞彩数据源 */
+    static SOURCES = {
+        // 中国竞彩网 — 最权威
+        SPORTERY: 'https://www.sporttery.cn/jc/js/opensj/js/qc/zq_skj.js',
+        // 备用: 500.com API 风格
+        W500: 'https://live.500.com/detail.php?fid=',
+        // 备用: 新浪彩票数据
+        SINA: 'https://odds.sina.com.cn/',
+    };
+
+    /**
+     * 抓取实时赔率 (尝试多个数据源)
+     * @param {string} matchId - 可选, 比赛ID
+     * @returns {Promise<Object>} oddsData 或 null
+     */
+    static async fetchLiveOdds(matchId) {
+        // 尝试竞彩官网 JSONP 接口
+        const urls = [
+            `https://www.sporttery.cn/jc/js/opensj/js/qc/zq_skj.js?t=${Date.now()}`,
+            matchId ? `https://live.500.com/detail.php?fid=${matchId}` : null,
+        ].filter(Boolean);
+
+        for (const url of urls) {
+            try {
+                const resp = await fetch(url, {
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json, text/plain, */*' },
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (resp.ok) {
+                    const text = await resp.text();
+                    const data = LotteryOddsAnalyzer.parseResponse(text, url);
+                    if (data) return data;
+                }
+            } catch (e) {
+                // CORS 可能阻止，尝试下一个源
+            }
+        }
+
+        // 备用: 通过 JSONP 风格加载
+        try {
+            const data = await LotteryOddsAnalyzer.jsonpFetch(
+                `https://www.sporttery.cn/jc/js/opensj/js/qc/zq_skj.js?callback=oddsCallback&t=${Date.now()}`
+            );
+            if (data) return data;
+        } catch (e) {}
+
+        return null;
+    }
+
+    /** 解析竞彩 API 响应 */
+    static parseResponse(text, url) {
+        // 竞彩官网格式: var data={...}; 或 callback({...})
+        const jsonMatch = text.match(/(?:var\s+\w+\s*=\s*|callback\s*\()?(\[[\s\S]*?\]|\{[\s\S]*?\})\s*\)?\s*;?\s*$/m);
+        if (!jsonMatch) {
+            // 尝试直接 JSON 解析
+            try { return JSON.parse(text); } catch (e) { return null; }
+        }
+        try {
+            const parsed = JSON.parse(jsonMatch[1]);
+            // 转换为标准格式
+            if (Array.isArray(parsed)) {
+                return LotteryOddsAnalyzer.fromSportteryArray(parsed);
+            }
+            return parsed;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /** JSONP 抓取 */
+    static jsonpFetch(url) {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'oddsCallback_' + Date.now();
+            const script = document.createElement('script');
+            const timeout = setTimeout(() => {
+                cleanup();
+                reject(new Error('JSONP timeout'));
+            }, 5000);
+
+            const cleanup = () => {
+                clearTimeout(timeout);
+                delete window[callbackName];
+                if (script.parentNode) script.parentNode.removeChild(script);
+            };
+
+            window[callbackName] = (data) => {
+                cleanup();
+                resolve(LotteryOddsAnalyzer.fromSportteryArray(data));
+            };
+
+            script.src = url.replace('oddsCallback', callbackName);
+            script.onerror = () => { cleanup(); reject(new Error('JSONP load error')); };
+            document.head.appendChild(script);
+        });
+    }
+
+    /** 从竞彩官网数组格式转换 */
+    static fromSportteryArray(arr) {
+        // 竞彩数据格式: [matchId, league, home, away, ..., spf: [h,d,a], rqs: [...], totalGoals: [...]]
+        // 每个元素可能是嵌套数组
+        const matches = [];
+        for (const item of arr) {
+            if (!Array.isArray(item) || item.length < 20) continue;
+            matches.push({
+                matchId: item[0],
+                home: item[2],
+                away: item[3],
+                spf: item[10] ? { home: parseFloat(item[10]), draw: parseFloat(item[11]), away: parseFloat(item[12]) } : null,
+                totalGoals: item[13] ? {
+                    '0': parseFloat(item[13]), '1': parseFloat(item[14]), '2': parseFloat(item[15]),
+                    '3': parseFloat(item[16]), '4': parseFloat(item[17]), '5': parseFloat(item[18]),
+                    '6': parseFloat(item[19]), '7+': parseFloat(item[20]),
+                } : null,
+            });
+        }
+        return matches;
+    }
+
     constructor(oddsData = {}) {
         this.oddsData = oddsData;
         this.handicap = oddsData.handicapLine || 2.5;
