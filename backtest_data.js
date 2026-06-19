@@ -199,7 +199,49 @@ const BACKTEST_MATCHES = [
     // Third place
     { home:'加拿大',   away:'乌拉圭',   stage:'三四名决赛', handicap:2.5, hScore:2, aScore:2 , tournament:'Copa' },
     // Final
-    { home:'阿根廷',   away:'哥伦比亚', stage:'决赛', handicap:2.0, hScore:1, aScore:0 , tournament:'Copa' },
+    { home:'阿根廷',   away:'哥伦比亚', stage:'决赛', handicap:2.0, hScore:1, aScore:0, tournament:'Copa' },
+
+    // ==================== AFCON 2023 (48场) ====================
+    // Group A: CIV, NGA, EQG, GNB — only CIV+NGA in DB
+    { home:'科特迪瓦', away:'尼日利亚', stage:'小组赛', handicap:2.0, hScore:0, aScore:1, tournament:'AFCON' },
+    // Group B: EGY, GHA, CPV, MOZ
+    { home:'埃及', away:'加纳', stage:'小组赛', handicap:2.0, hScore:2, aScore:2, tournament:'AFCON' },
+    { home:'佛得角', away:'埃及', stage:'小组赛', handicap:2.0, hScore:2, aScore:2, tournament:'AFCON' },
+    { home:'加纳', away:'佛得角', stage:'小组赛', handicap:2.0, hScore:1, aScore:2, tournament:'AFCON' },
+    // Group C: SEN, CMR, GUI, GAM
+    { home:'塞内加尔', away:'喀麦隆', stage:'小组赛', handicap:2.0, hScore:3, aScore:1, tournament:'AFCON' },
+    { home:'喀麦隆', away:'几内亚', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'几内亚', away:'塞内加尔', stage:'小组赛', handicap:2.0, hScore:0, aScore:2, tournament:'AFCON' },
+    // Group D: ALG, BFA, ANG, MTN
+    { home:'阿尔及利亚', away:'安哥拉', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'阿尔及利亚', away:'布基纳法索', stage:'小组赛', handicap:2.0, hScore:2, aScore:2, tournament:'AFCON' },
+    { home:'安哥拉', away:'布基纳法索', stage:'小组赛', handicap:2.0, hScore:2, aScore:0, tournament:'AFCON' },
+    // Group E: TUN, MLI, RSA, NAM
+    { home:'突尼斯', away:'纳米比亚', stage:'小组赛', handicap:2.0, hScore:0, aScore:1, tournament:'AFCON' },
+    { home:'马里', away:'南非', stage:'小组赛', handicap:2.0, hScore:2, aScore:0, tournament:'AFCON' },
+    { home:'突尼斯', away:'马里', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'南非', away:'纳米比亚', stage:'小组赛', handicap:2.0, hScore:4, aScore:0, tournament:'AFCON' },
+    { home:'南非', away:'突尼斯', stage:'小组赛', handicap:2.0, hScore:0, aScore:0, tournament:'AFCON' },
+    // Group F: MAR, COD, ZAM, TAN
+    { home:'摩洛哥', away:'民主刚果', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'民主刚果', away:'赞比亚', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'赞比亚', away:'摩洛哥', stage:'小组赛', handicap:2.0, hScore:0, aScore:1, tournament:'AFCON' },
+    // R16
+    { home:'尼日利亚', away:'喀麦隆', stage:'1/8决赛', handicap:2.0, hScore:2, aScore:0, tournament:'AFCON' },
+    { home:'埃及', away:'民主刚果', stage:'1/8决赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'塞内加尔', away:'科特迪瓦', stage:'1/8决赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'马里', away:'布基纳法索', stage:'1/8决赛', handicap:2.0, hScore:2, aScore:1, tournament:'AFCON' },
+    { home:'摩洛哥', away:'南非', stage:'1/8决赛', handicap:2.0, hScore:0, aScore:2, tournament:'AFCON' },
+    { home:'安哥拉', away:'纳米比亚', stage:'1/8决赛', handicap:2.0, hScore:3, aScore:0, tournament:'AFCON' },
+    // QF
+    { home:'尼日利亚', away:'安哥拉', stage:'1/4决赛', handicap:2.0, hScore:1, aScore:0, tournament:'AFCON' },
+    { home:'民主刚果', away:'几内亚', stage:'1/4决赛', handicap:2.0, hScore:3, aScore:1, tournament:'AFCON' },
+    { home:'马里', away:'科特迪瓦', stage:'1/4决赛', handicap:2.0, hScore:1, aScore:2, tournament:'AFCON' },
+    // SF
+    { home:'尼日利亚', away:'南非', stage:'半决赛', handicap:2.0, hScore:1, aScore:1, tournament:'AFCON' },
+    { home:'科特迪瓦', away:'民主刚果', stage:'半决赛', handicap:2.0, hScore:1, aScore:0, tournament:'AFCON' },
+    // Final
+    { home:'尼日利亚', away:'科特迪瓦', stage:'决赛', handicap:2.0, hScore:1, aScore:2, tournament:'AFCON' },
 ];
 
 // Standard exports

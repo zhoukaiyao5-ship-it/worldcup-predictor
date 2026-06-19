@@ -66,6 +66,12 @@ const TEAM_DATABASE = {
     '南非':     { att: 1.30, def: 0.82, style: 'balanced',  form: 1.4, setPiece: 0.30, phys: 7.5, depth: 6.8, fifa: 1585 },
     '佛得角':   { att: 1.25, def: 0.85, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.8, depth: 6.2, fifa: 1550 },
     '民主刚果': { att: 1.35, def: 0.88, style: 'balanced',  form: 1.3, setPiece: 0.30, phys: 7.8, depth: 6.5, fifa: 1570 },
+    '马里':     { att: 1.35, def: 0.82, style: 'balanced',  form: 1.5, setPiece: 0.28, phys: 8.0, depth: 6.5, fifa: 1558 },
+    '布基纳法索': { att: 1.30, def: 0.88, style: 'counter', form: 1.4, setPiece: 0.30, phys: 7.8, depth: 6.2, fifa: 1545 },
+    '几内亚':   { att: 1.25, def: 0.90, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1530 },
+    '安哥拉':   { att: 1.20, def: 0.92, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1518 },
+    '纳米比亚': { att: 1.10, def: 1.05, style: 'defensive', form: 1.1, setPiece: 0.25, phys: 7.0, depth: 5.5, fifa: 1430 },
+    '赞比亚':   { att: 1.15, def: 1.00, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.2, depth: 5.8, fifa: 1475 },
     '尼日利亚': { att: 1.50, def: 0.88, style: 'attack',    form: 1.5, setPiece: 0.30, phys: 8.0, depth: 7.2, fifa: 1598 },
     '阿尔及利亚':{ att: 1.40, def: 0.85, style: 'balanced', form: 1.4, setPiece: 0.28, phys: 7.5, depth: 6.8, fifa: 1590 },
     '埃及':     { att: 1.35, def: 0.82, style: 'counter',   form: 1.4, setPiece: 0.33, phys: 7.5, depth: 6.8, fifa: 1585 },
@@ -111,11 +117,11 @@ const TACTIC_MATRIX = {
 // ==================== 可配置参数 (可从外部覆盖) ====================
 const CONFIG = {
     // 全局校准乘数 — 回测最优: 1.45
-    // 全局校准乘数 — 1000路网格最优 (174场)
-    globalBaseMultiplier: 1.30,
+    // 全局校准乘数 — 320路网格最优 (204场)
+    globalBaseMultiplier: 1.25,
 
-    // 防守缩放系数 — 1000路网格最优 (174场)
-    defenseScaling: 2.4,
+    // 防守缩放系数 — 320路网格最优 (204场)
+    defenseScaling: 2.6,
 
     // 阶段系数 — 值 < 1.0 表示进球期望下降
     stageMultiplier: {
@@ -140,7 +146,7 @@ const CONFIG = {
     mismatch: {
         enabled: true,
         threshold: 0.10,
-        maxAmplification: 1.35,   // 1000路网格最优 (174场)
+        maxAmplification: 1.40,   // 320路网格最优 (204场)
     },
 
     // 心理/形势系数
