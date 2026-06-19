@@ -691,6 +691,20 @@ class WorldCupPredictor {
 
     // ==================== 比分预测 (负二项/泊松混合) ====================
 
+    _predictBlowout(xG) {
+        const ppmf = (l, k) => Math.pow(l, k) * Math.exp(-l) / factorial(k);
+        const r = this.home.att / (this.home.att + this.away.att);
+        const hxg = xG * r, axg = xG * (1 - r);
+        const tmpl = [{s:'3-0',h:3,a:0},{s:'4-0',h:4,a:0},{s:'4-1',h:4,a:1},{s:'5-0',h:5,a:0},{s:'5-1',h:5,a:1},{s:'5-2',h:5,a:2},{s:'6-1',h:6,a:1},{s:'6-2',h:6,a:2}];
+        const res = tmpl.map(t => {
+            const h = r > 0.5 ? t.h : t.a, a = r > 0.5 ? t.a : t.h;
+            return { score: `${h}-${a}`, home: h, away: a, probability: ppmf(hxg, h) * ppmf(axg, a), total: h + a };
+        });
+        const tp = res.reduce((s, sl) => s + sl.probability, 0);
+        for (const s of res) s.probability /= Math.max(tp, 0.001);
+        return res.sort((a, b) => b.probability - a.probability).slice(0, 5);
+    }
+
     _predictScorelines(expectedGoals) {
         const { maxGoals, overdispersion } = this.config.poisson;
         const attRatio = this.home.att / (this.home.att + this.away.att);
@@ -909,6 +923,11 @@ class WorldCupPredictor {
         const overProb = scorelines.reduce((s, sl) => s + (sl.isOver ? sl.probability : 0), 0);
         const underProb = scorelines.reduce((s, sl) => s + (sl.isUnder ? sl.probability : 0), 0);
 
+        // 大比分风险: 纯展示, 基于赛后xG > 3.5 或 att差距 > 0.7
+        const attGap = Math.abs(this.home.att - this.away.att);
+        const showBlowout = clampedExpected > 3.5 || attGap > 0.7;
+        const blowoutScores = showBlowout ? this._predictBlowout(clampedExpected) : null;
+
         // 比分分布概率和 — 用于展示, 不改变O/U判定
 
         // --- 因子详情 ---
@@ -982,6 +1001,9 @@ class WorldCupPredictor {
             },
             // 竞彩赔率资金流向分析 (反向指标)
             marketAnalysis: this._buildMarketAnalysis(isOver, clampedExpected, marketAnalysis),
+            blowoutRisk: showBlowout || false,
+            gapRatio: parseFloat((attGap || 0).toFixed(2)),
+            blowoutScores: blowoutScores ? blowoutScores.map(s => ({ score: s.score, probability: parseFloat((s.probability * 100).toFixed(1)), total: s.total })) : null,
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),
