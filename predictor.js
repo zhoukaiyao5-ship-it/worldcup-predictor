@@ -87,6 +87,10 @@ const TEAM_DATABASE = {
     '伊拉克':   { att: 1.25, def: 0.88, style: 'defensive', form: 1.3, setPiece: 0.30, phys: 7.5, depth: 6.2, fifa: 1535 },
     '约旦':     { att: 1.20, def: 0.88, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1520 },
     '乌兹别克': { att: 1.30, def: 0.85, style: 'balanced',  form: 1.4, setPiece: 0.28, phys: 7.5, depth: 6.2, fifa: 1530 },
+    '巴林':     { att: 1.15, def: 0.90, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 7.2, depth: 6.0, fifa: 1495 },
+    '阿曼':     { att: 1.15, def: 0.92, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.2, depth: 6.0, fifa: 1480 },
+    '叙利亚':   { att: 1.10, def: 0.95, style: 'defensive', form: 1.1, setPiece: 0.30, phys: 7.2, depth: 5.8, fifa: 1440 },
+    '泰国':     { att: 1.10, def: 0.98, style: 'balanced',  form: 1.2, setPiece: 0.28, phys: 7.0, depth: 5.5, fifa: 1420 },
 
     // 中北美
     '墨西哥':   { att: 1.55, def: 0.82, style: 'counter',   form: 1.6, setPiece: 0.32, phys: 8.0, depth: 7.2, fifa: 1655 },
@@ -838,15 +842,15 @@ class WorldCupPredictor {
         return clamp(impact, 0.88, 1.0);
     }
 
-    /** 赛事区域校准因子: 不同赛事场均进球差异显著 */
+    /** 赛事区域校准因子: 625路网格最优 (218场) */
     _factorTournament() {
         switch (this.tournament) {
-            case 'Copa':     return 0.81;
-            case 'Euro':     return 0.90;
-            case 'AFCON':    return 0.92;
-            case 'Asian':    return 0.95;
-            case 'Qualifier':return 1.16;
-            default:         return 1.00;
+            case 'Copa':     return 0.70; // 美洲杯 — 极度防守
+            case 'Euro':     return 0.95; // 欧洲杯
+            case 'AFCON':    return 0.80; // 非洲杯
+            case 'Asian':    return 0.80; // 亚洲杯
+            case 'Qualifier':return 1.20; // 预选赛 — 强弱悬殊
+            default:         return 1.00; // WC
         }
     }
 

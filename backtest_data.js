@@ -242,6 +242,22 @@ const BACKTEST_MATCHES = [
     { home:'科特迪瓦', away:'民主刚果', stage:'半决赛', handicap:2.0, hScore:1, aScore:0, tournament:'AFCON' },
     // Final
     { home:'尼日利亚', away:'科特迪瓦', stage:'决赛', handicap:2.0, hScore:1, aScore:2, tournament:'AFCON' },
+
+    // ==================== Asian Cup 2023 (有效场次) ====================
+    { home:'澳大利亚', away:'乌兹别克', stage:'小组赛', handicap:2.0, hScore:1, aScore:1, tournament:'Asian' },
+    { home:'伊朗', away:'阿联酋',   stage:'小组赛', handicap:2.0, hScore:2, aScore:1, tournament:'Asian' },
+    { home:'日本', away:'伊拉克',   stage:'小组赛', handicap:2.0, hScore:1, aScore:2, tournament:'Asian' },
+    { home:'韩国', away:'巴林',     stage:'小组赛', handicap:2.5, hScore:3, aScore:1, tournament:'Asian' },
+    { home:'约旦', away:'韩国',     stage:'小组赛', handicap:2.5, hScore:2, aScore:2, tournament:'Asian' },
+    { home:'沙特', away:'阿曼',     stage:'小组赛', handicap:2.0, hScore:2, aScore:1, tournament:'Asian' },
+    { home:'沙特', away:'泰国',     stage:'小组赛', handicap:2.5, hScore:0, aScore:0, tournament:'Asian' },
+    { home:'卡塔尔', away:'乌兹别克', stage:'1/4决赛', handicap:2.0, hScore:1, aScore:1, tournament:'Asian' },
+    { home:'伊朗', away:'叙利亚',   stage:'1/8决赛', handicap:2.0, hScore:1, aScore:1, tournament:'Asian' },
+    { home:'伊朗', away:'日本',     stage:'1/4决赛', handicap:2.5, hScore:2, aScore:1, tournament:'Asian' },
+    { home:'澳大利亚', away:'韩国', stage:'1/4决赛', handicap:2.5, hScore:1, aScore:2, tournament:'Asian' },
+    { home:'约旦', away:'韩国',     stage:'半决赛', handicap:2.5, hScore:2, aScore:0, tournament:'Asian' },
+    { home:'伊朗', away:'卡塔尔',   stage:'半决赛', handicap:2.5, hScore:2, aScore:3, tournament:'Asian' },
+    { home:'约旦', away:'卡塔尔',   stage:'决赛', handicap:2.0, hScore:1, aScore:3, tournament:'Asian' },
 ];
 
 // Standard exports
