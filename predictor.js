@@ -225,7 +225,7 @@ const CONFIG = {
     // 泊松分布参数
     poisson: {
         maxGoals: 7,
-        totalDispersion: 2.5,    // 总进球过离散 (>1=分布更宽)
+        overdispersion: 1.8,    // 过离散: >1=增加极端比分概率
     },
 
     // 置信度 Sigmoid 参数
@@ -703,104 +703,35 @@ class WorldCupPredictor {
     // ==================== 比分预测 (负二项/泊松混合) ====================
 
     _predictScorelines(expectedGoals) {
-        const { maxGoals, totalDispersion } = this.config.poisson;
+        const { maxGoals, overdispersion } = this.config.poisson;
         const attRatio = this.home.att / (this.home.att + this.away.att);
         const homeXG = expectedGoals * attRatio;
         const awayXG = expectedGoals * (1 - attRatio);
-        const td = totalDispersion || 2.0; // 总进球过离散度 (>1=更宽)
+        const omega = overdispersion || 1.8;
 
         const scorelines = [];
         const ppmf = (lambda, k) => Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
 
-        // Step 1: 计算每个总进球数的概率并做过离散展宽
-        const totalProbDist = {};
-        let totalSum = 0;
-        for (let t = 0; t <= 14; t++) {
-            let prob = 0;
-            for (let h = 0; h <= t && h <= maxGoals; h++) {
-                const a = t - h;
-                if (a > maxGoals) continue;
-                prob += ppmf(homeXG, h) * ppmf(awayXG, a);
-            }
-            // 过离散展宽: 降低峰值, 提高尾部分布
-            prob = Math.pow(prob, 1.0 / td);
-            if (prob > 0.00005) {
-                totalProbDist[t] = prob;
-                totalSum += prob;
-            }
-        }
-        // 归一化总进球分布
-        for (const t in totalProbDist) totalProbDist[t] /= Math.max(totalSum, 0.001);
-
-        // Step 2: 在每个总进球组内, 用经验频率分配比分概率
-        const scores = {};
-        for (const [totalStr, totalProb] of Object.entries(totalProbDist)) {
-            const t = parseInt(totalStr);
-            const binPrior = WorldCupPredictor.getBinnedPrior(t);
-            let priorSum = 0;
-            const pairs = [];
-            for (let h = 0; h <= t && h <= maxGoals; h++) {
-                const a = t - h;
-                if (a > maxGoals) continue;
-                const ep = binPrior[h]?.[a] ?? 0.003;
-                pairs.push({ score: `${h}-${a}`, ep });
-                priorSum += ep;
-            }
-            if (priorSum < 0.001) continue;
-            for (const { score, ep } of pairs) {
-                scores[score] = (scores[score] || 0) + totalProb * (ep / priorSum);
+        let totalProb = 0;
+        for (let h = 0; h <= maxGoals; h++) {
+            for (let a = 0; a <= maxGoals; a++) {
+                let prob = ppmf(homeXG, h) * ppmf(awayXG, a);
+                // 过离散修正: 增加极端比分概率, 减少中间集中
+                const hDev = (h - homeXG) / Math.sqrt(homeXG * omega + 0.1);
+                const aDev = (a - awayXG) / Math.sqrt(awayXG * omega + 0.1);
+                prob *= 1.0 + Math.max(0, hDev * hDev + aDev * aDev) * (omega - 1.0) * 0.04;
+                scorelines.push({
+                    score: `${h}-${a}`, home: h, away: a,
+                    probability: prob, total: h + a,
+                    isOver: (h + a) > this.handicap,
+                    isUnder: (h + a) < this.handicap,
+                });
+                totalProb += prob;
             }
         }
-
-        // Step 3: 转换为数组并归一化
-        for (const [score, prob] of Object.entries(scores)) {
-            const [h, a] = score.split('-').map(Number);
-            scorelines.push({
-                score, home: h, away: a,
-                probability: prob,  // 在循环外归一化
-                total: h + a,
-                isOver: (h + a) > this.handicap,
-                isUnder: (h + a) < this.handicap,
-            });
-        }
-
-        const totalProb = scorelines.reduce((s, sl) => s + sl.probability, 0);
         for (const s of scorelines) s.probability /= Math.max(totalProb, 0.001);
-
         scorelines.sort((a, b) => b.probability - a.probability);
         return scorelines;
-    }
-
-    /** 按总进球数获取经验比分频率 (142场数据) */
-    static getBinnedPrior(totalGoals) {
-        if (totalGoals <= 1) {
-            return { 0:{0:0.355}, 1:{0:0.323}, 0:{1:0.323} }; // 0-0 35.5%, 1-0 32.3%, 0-1 32.3%
-        } else if (totalGoals === 2) {
-            return { 0:{2:0.150}, 1:{0:0.025,1:0.450,2:0.025}, 2:{0:0.250,1:0.025} }; // 1-1 45%, 2-0 25%, 0-2 15%
-        } else if (totalGoals === 3) {
-            return { 0:{3:0.062}, 1:{2:0.312}, 2:{1:0.438}, 3:{0:0.156,1:0.031} }; // 2-1 44%, 1-2 31%, 3-0 16%
-        } else {
-            // 4+ goals — wider distribution from 142 matches
-            const highDist = {};
-            const highScores = { '4-1':17.9,'1-3':12.8,'3-1':12.8,'2-3':7.7,'2-2':7.7,'3-3':5.1,'5-1':5.1,'1-4':5.1,'4-0':5.1,'6-2':2.6,'7-0':2.6,'2-4':2.6,'3-2':2.6,'6-1':2.6,'6-0':2.6,'7-1':2.6,'4-2':2.6 };
-            for (const [score, pct] of Object.entries(highScores)) {
-                const [h, a] = score.split('-').map(Number);
-                if (!highDist[h]) highDist[h] = {};
-                highDist[h][a] = pct / 100;
-            }
-            // For specific totals not in highScores, use nearest
-            if (totalGoals >= 4) {
-                // Add scores matching this total
-                for (const [score, pct] of Object.entries(highScores)) {
-                    const [h, a] = score.split('-').map(Number);
-                    if (h + a === totalGoals) {
-                        if (!highDist[h]) highDist[h] = {};
-                        highDist[h][a] = Math.max(highDist[h][a] || 0, pct / 100 * 2);
-                    }
-                }
-            }
-            return highDist;
-        }
     }
 
     // ============================================================
@@ -959,7 +890,9 @@ class WorldCupPredictor {
             };
         }
 
-        // --- 最终判断大小球 (可能已被贝叶斯先验调整) ---
+        // --- 最终判断大小球 ---
+        // O/U 判定来自比分分布概率和, 确保与比分预测一致
+        // overProbability/underProbability 在 _predictScorelines 之后计算
         const isOver = clampedExpected > this.handicap;
         const edge = clampedExpected - this.handicap;
 
@@ -987,6 +920,8 @@ class WorldCupPredictor {
         const overProb = scorelines.reduce((s, sl) => s + (sl.isOver ? sl.probability : 0), 0);
         const underProb = scorelines.reduce((s, sl) => s + (sl.isUnder ? sl.probability : 0), 0);
 
+        // 比分分布概率和 — 用于展示, 不改变O/U判定
+
         // --- 因子详情 ---
         const factorsDetail = {
             '基础预期进球':    { value: baseVal.toFixed(2),     multiplier: baseVal.toFixed(2) },
@@ -1003,8 +938,7 @@ class WorldCupPredictor {
         };
 
         // --- 生成洞察 ---
-        const insights = this._generateInsights(clampedExpected, isOver, edge, consensus,
-            infoEdgeR, fatigueR);
+        const insights = this._generateInsights(clampedExpected, isOver, edge, consensus, infoEdgeR, fatigueR);
 
         // --- 生成理由 ---
         const reasons = this._generateReasons(clampedExpected, edge, isOver, factorsDetail, infoEdgeR, consensus);
