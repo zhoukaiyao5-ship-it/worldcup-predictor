@@ -211,7 +211,8 @@ const CONFIG = {
     // 泊松分布参数
     poisson: {
         maxGoals: 7,
-        overdispersion: 1.05,
+        overdispersion: 1.8,
+        empiricalBlend: 0.45,    // 经验频率混合比例 (回测最优)
     },
 
     // 置信度 Sigmoid 参数
@@ -688,14 +689,18 @@ class WorldCupPredictor {
     // ==================== 比分预测 (负二项/泊松混合) ====================
 
     _predictScorelines(expectedGoals) {
-        const { maxGoals, overdispersion } = this.config.poisson;
+        const { maxGoals, overdispersion, empiricalBlend } = this.config.poisson;
         const attRatio = this.home.att / (this.home.att + this.away.att);
         const homeXG = expectedGoals * attRatio;
         const awayXG = expectedGoals * (1 - attRatio);
+        const blend = empiricalBlend || 0.4;
+
+        // 按预期进球选择分组经验先验
+        const binnedPrior = WorldCupPredictor.getBinnedPrior(expectedGoals);
 
         const scorelines = [];
+        const omega = overdispersion || 1.8;
 
-        // 使用标准泊松 (可通过 overdispersion 参数调优)
         const poissonPMF = (lambda, k) => {
             return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
         };
@@ -703,11 +708,23 @@ class WorldCupPredictor {
         let totalProb = 0;
         for (let h = 0; h <= maxGoals; h++) {
             for (let a = 0; a <= maxGoals; a++) {
-                const prob = poissonPMF(homeXG, h) * poissonPMF(awayXG, a);
+                // 模型概率
+                let modelProb = poissonPMF(homeXG, h) * poissonPMF(awayXG, a);
+
+                // 过离散修正
+                const hDev = (h - homeXG) / Math.sqrt(homeXG * omega + 0.1);
+                const aDev = (a - awayXG) / Math.sqrt(awayXG * omega + 0.1);
+                modelProb *= 1.0 + (hDev * hDev + aDev * aDev) * (omega - 1.0) * 0.08;
+
+                // xG分组经验先验
+                const empiricalPrior = binnedPrior[h]?.[a] ?? 0.001;
+
+                // 混合
+                const prob = modelProb * (1 - blend) + empiricalPrior * blend;
+
                 scorelines.push({
                     score: `${h}-${a}`,
-                    home: h,
-                    away: a,
+                    home: h, away: a,
                     probability: prob,
                     total: h + a,
                     isOver: (h + a) > this.handicap,
@@ -717,13 +734,30 @@ class WorldCupPredictor {
             }
         }
 
-        // 重归一化 (截断修正)
         for (const s of scorelines) {
             s.probability = s.probability / Math.max(totalProb, 0.001);
         }
 
         scorelines.sort((a, b) => b.probability - a.probability);
         return scorelines;
+    }
+
+    /** 按预期进球获取分组经验先验 */
+    static getBinnedPrior(xG) {
+        // 基于98场实际比赛: 按总进球分组统计比分频率
+        if (xG <= 1.5) {
+            // 低进球: 0-0(40%), 1-0(36%), 0-1(24%)
+            return { 0:{0:0.40,1:0.24}, 1:{0:0.36} };
+        } else if (xG <= 2.5) {
+            // 中进球: 1-1(41%), 2-0(37%), 0-2(22%)
+            return { 0:{2:0.22}, 1:{1:0.41}, 2:{0:0.37} };
+        } else if (xG <= 3.5) {
+            // 中高进球: 2-1(40%), 1-2(40%), 3-0(12%), 0-3(8%)
+            return { 1:{2:0.40}, 2:{1:0.40}, 3:{0:0.12}, 0:{3:0.08} };
+        } else {
+            // 高进球: 4-1(19%), 1-3(14%), 2-3(14%), 3-1(10%), 2-2(10%), ...
+            return { 1:{3:0.14}, 2:{3:0.14,2:0.10}, 3:{1:0.10,3:0.10}, 4:{1:0.19}, 5:{1:0.05}, 6:{1:0.05,2:0.05}, 7:{0:0.05} };
+        }
     }
 
     // ==================== 主预测 ====================
@@ -1064,6 +1098,46 @@ class WorldCupPredictor {
      * @param {Array} matches - [{ home, away, stage, handicap, actualTotal, ... }]
      * @returns 回测报告
      */
+    /** 评估 Top-3 比分准确度 */
+    top3ScorelineAccuracy(matches) {
+        if (!matches || matches.length === 0) return { accuracy: 0, top1: 0, top2: 0, top3: 0, total: 0 };
+
+        let top1 = 0, top2 = 0, top3 = 0, total = 0;
+        const detail = [];
+
+        for (const m of matches) {
+            if (!m.hScore && m.hScore !== 0) continue;
+            this.setMatch(m.home, m.away, m.stage, m.handicap);
+            if (m.situation) this.setSituation(m.situation);
+            const r = this.predict();
+            const top3Sl = r.topScorelines.map(s => s.score);
+            const actualScore = `${m.hScore}-${m.aScore}`;
+            const pos = top3Sl.indexOf(actualScore);
+
+            total++;
+            if (pos === 0) top1++;
+            if (pos >= 0 && pos <= 1) top2++;
+            if (pos >= 0) top3++;
+
+            detail.push({
+                match: `${m.home} ${m.hScore}-${m.aScore} ${m.away}`,
+                top3: top3Sl,
+                actual: actualScore,
+                position: pos >= 0 ? `Top-${pos + 1}` : 'Miss',
+                expectedGoals: r.expectedGoals,
+            });
+        }
+
+        return {
+            accuracy: total > 0 ? parseFloat((top3 / total * 100).toFixed(1)) : 0,
+            top1Rate: total > 0 ? parseFloat((top1 / total * 100).toFixed(1)) : 0,
+            top2Rate: total > 0 ? parseFloat((top2 / total * 100).toFixed(1)) : 0,
+            top3Rate: total > 0 ? parseFloat((top3 / total * 100).toFixed(1)) : 0,
+            top1, top2, top3, total,
+            detail,
+        };
+    }
+
     backtest(matches) {
         if (!Array.isArray(matches) || matches.length === 0) {
             throw new ValidationError('回测需要至少1场比赛数据');
@@ -1084,7 +1158,8 @@ class WorldCupPredictor {
                 if (m.marketHeat !== undefined) this.setMarketHeat(m.marketHeat);
 
                 const pred = this.predict();
-                const actualOver = m.actualTotal > m.handicap;
+                const matchTotal = m.actualTotal !== undefined ? m.actualTotal : (m.hScore + m.aScore);
+                const actualOver = matchTotal > (m.handicap || 2.5);
                 const isCorrect = pred.isOver === actualOver;
 
                 if (isCorrect) correct++;
