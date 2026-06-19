@@ -608,8 +608,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>⚽ 世界杯大小球预测 <span class="version-badge">V4.0 InfoEdge</span></h1>
-            <div class="subtitle">8因子模型 + 信息差增强 + 动态权重 + 实时数据</div>
+            <h1>⚽ 世界杯大小球预测 <span class="version-badge">V2.0 深度优化</span></h1>
+            <div class="subtitle">10因子全乘法 + 贝叶斯信息差 + Sigmoid置信度 + 回测框架</div>
         </div>
 
         <div class="data-status">
@@ -647,7 +647,11 @@
                         <label>比赛阶段</label>
                         <select id="stage">
                             <option value="小组赛">小组赛</option>
-                            <option value="淘汰赛">淘汰赛</option>
+                            <option value="1/16决赛">1/16 决赛</option>
+                            <option value="1/8决赛">1/8 决赛</option>
+                            <option value="1/4决赛">1/4 决赛</option>
+                            <option value="半决赛">半决赛</option>
+                            <option value="三四名决赛">三四名决赛</option>
                             <option value="决赛">决赛</option>
                         </select>
                     </div>
@@ -662,31 +666,54 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>出线形势</label>
-                    <select id="situation">
-                        <option value="常规/未知">常规/未知</option>
-                        <option value="双双出线">双双出线</option>
-                        <option value="生死战">生死战</option>
-                        <option value="荣誉之战">荣誉之战</option>
-                        <option value="一队出线">一队出线</option>
-                    </select>
+                <div class="row">
+                    <div class="form-group">
+                        <label>出线形势</label>
+                        <select id="situation">
+                            <option value="常规">常规</option>
+                            <option value="双双出线">双双出线</option>
+                            <option value="生死战">生死战</option>
+                            <option value="荣誉之战">荣誉之战</option>
+                            <option value="一方出线">一方出线</option>
+                            <option value="双双淘汰">双双淘汰</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>士气类型</label>
+                        <select id="morale">
+                            <option value="均衡">均衡</option>
+                            <option value="强势方高">强势方高</option>
+                            <option value="弱势方高">弱势方高</option>
+                            <option value="对攻预期">对攻预期</option>
+                            <option value="保守预期">保守预期</option>
+                            <option value="双方低迷">双方低迷</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label>士气类型</label>
-                    <select id="morale">
-                        <option value="均衡">均衡</option>
-                        <option value="强弱分明">强弱分明</option>
-                        <option value="对攻大战">对攻大战</option>
-                        <option value="保守战术">保守战术</option>
-                    </select>
+                <div class="row">
+                    <div class="form-group">
+                        <label>主队休息天数</label>
+                        <input type="number" id="restDaysHome" value="7" min="2" max="14" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>客队休息天数</label>
+                        <input type="number" id="restDaysAway" value="7" min="2" max="14" step="1">
+                    </div>
                 </div>
 
                 <div class="switch-group">
                     <span style="font-size: 0.9rem;">启用实时数据</span>
                     <label class="switch">
                         <input type="checkbox" id="useLiveData" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="switch-group">
+                    <span style="font-size: 0.9rem;">主场优势 (中立场默认关闭)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="homeAdvantage">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -729,7 +756,19 @@
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" id="edge">--</div>
-                            <div class="stat-label">差值</div>
+                            <div class="stat-label">盘口差值</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="overProbability" style="color:#4ade80">--</div>
+                            <div class="stat-label">大球概率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="underProbability" style="color:#f87171">--</div>
+                            <div class="stat-label">小球概率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="font-size:0.9rem; color:#8892b0" id="factorConsensus">--</div>
+                            <div class="stat-label">因子共识</div>
                         </div>
                     </div>
 
@@ -848,66 +887,48 @@
     </div>
 
     <script>
-        // 初始化
+        // ==================== v2.0 初始化 ====================
         let predictor = null;
         let autoRefreshInterval = null;
+        let predictionCount = 0;
 
-        // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
-            // 初始化球队下拉框
             initTeamSelects();
-            
-            // 绑定预测按钮
             document.getElementById('predictBtn').addEventListener('click', doPrediction);
-            
-            // 绑定自动刷新开关
             document.getElementById('autoRefresh').addEventListener('change', toggleAutoRefresh);
-            
-            // 回车触发预测
             document.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    doPrediction();
-                }
+                if (e.key === 'Enter') doPrediction();
             });
-            
-            // 页面加载自动预测一次
             setTimeout(doPrediction, 500);
         });
 
-        // 初始化球队选择
         function initTeamSelects() {
             const teams = getTeamList();
             const homeSelect = document.getElementById('homeTeam');
             const awaySelect = document.getElementById('awayTeam');
-            
+
             teams.forEach(team => {
-                const option1 = document.createElement('option');
-                option1.value = team;
-                option1.textContent = team;
-                homeSelect.appendChild(option1);
-                
-                const option2 = document.createElement('option');
-                option2.value = team;
-                option2.textContent = team;
-                awaySelect.appendChild(option2);
+                [homeSelect, awaySelect].forEach(sel => {
+                    const opt = document.createElement('option');
+                    opt.value = team;
+                    opt.textContent = team;
+                    sel.appendChild(opt);
+                });
             });
-            
-            // 默认选择
-            homeSelect.value = '葡萄牙';
-            awaySelect.value = '摩洛哥';
+
+            homeSelect.value = '法国';
+            awaySelect.value = '阿根廷';
         }
 
-        // 执行预测
         function doPrediction() {
             const loading = document.getElementById('loading');
             const resultContent = document.getElementById('resultContent');
             const predictBtn = document.getElementById('predictBtn');
-            
+
             loading.classList.add('active');
             resultContent.style.display = 'none';
             predictBtn.disabled = true;
-            
-            // 模拟加载延迟
+
             setTimeout(() => {
                 try {
                     const homeTeam = document.getElementById('homeTeam').value;
@@ -917,72 +938,74 @@
                     const situation = document.getElementById('situation').value;
                     const morale = document.getElementById('morale').value;
                     const useLiveData = document.getElementById('useLiveData').checked;
-                    
+                    const homeAdvantage = document.getElementById('homeAdvantage').checked;
+                    const restDaysHome = parseInt(document.getElementById('restDaysHome').value) || 7;
+                    const restDaysAway = parseInt(document.getElementById('restDaysAway').value) || 7;
+
                     // 创建预测器
                     predictor = new WorldCupPredictor();
-                    predictor.setMatch(homeTeam, awayTeam, stage, handicap, situation, morale);
-                    
-                    // 设置实时数据
+                    predictor.setMatch(homeTeam, awayTeam, stage, handicap, situation, morale, {
+                        homeAdvantage,
+                        restDaysHome,
+                        restDaysAway,
+                    });
+
                     if (useLiveData) {
-                        const liveData = generateMockLiveData(homeTeam, awayTeam);
+                        const liveData = generateMockLiveData(homeTeam, awayTeam, predictionCount);
                         predictor.setLiveData(liveData);
-                        
-                        // 更新数据状态
                         updateDataStatus(liveData);
                     } else {
                         updateDataStatus(null);
                     }
-                    
-                    // 执行预测
+
                     const result = predictor.predict();
-                    
-                    // 显示结果
+                    predictionCount++;
+
                     displayResult(result);
-                    
                     loading.classList.remove('active');
                     resultContent.style.display = 'block';
                     predictBtn.disabled = false;
-                    
+
                 } catch (error) {
                     console.error('预测出错:', error);
                     loading.classList.remove('active');
                     predictBtn.disabled = false;
-                    alert('预测出错：' + error.message);
+                    document.getElementById('resultContent').style.display = 'block';
+                    document.getElementById('prediction').textContent = '⚠️';
+                    document.getElementById('strength').textContent = error.message;
                 }
-            }, 300);
+            }, 250);
         }
 
-        // 更新数据状态
         function updateDataStatus(liveData) {
             const dataSource = document.getElementById('dataSource');
             const dataQuality = document.getElementById('dataQuality');
             const updateTime = document.getElementById('updateTime');
-            
+
             if (liveData) {
                 dataSource.textContent = liveData.data_source === 'mock' ? '模拟数据' : '实时API';
-                dataQuality.textContent = Math.round(liveData.data_quality * 100) + '%';
+                dataQuality.textContent = Math.round((liveData.data_quality || 0.5) * 100) + '%';
                 updateTime.textContent = new Date().toLocaleTimeString('zh-CN');
             } else {
-                dataSource.textContent = '基础模型';
+                dataSource.textContent = '纯模型 (无实时数据)';
                 dataQuality.textContent = '--';
                 updateTime.textContent = '--';
             }
         }
 
-        // 显示结果
         function displayResult(data) {
             // 主结果
             document.getElementById('prediction').textContent = data.prediction;
             document.getElementById('strength').textContent = data.strength;
-            document.getElementById('expectedGoals').textContent = data.expected_goals.toFixed(2);
+            document.getElementById('expectedGoals').textContent = data.expectedGoals.toFixed(2);
             document.getElementById('confidence').textContent = Math.round(data.confidence * 100) + '%';
             document.getElementById('edge').textContent = data.edge.toFixed(2);
-            
+
             // 比分预测
             const scorelineList = document.getElementById('scorelineList');
             scorelineList.innerHTML = '';
-            const maxProb = data.top_scorelines[0]?.probability || 1;
-            data.top_scorelines.forEach(sl => {
+            const maxProb = data.topScorelines[0]?.probability || 1;
+            data.topScorelines.forEach(sl => {
                 const item = document.createElement('div');
                 item.className = 'scoreline-item';
                 item.innerHTML = `
@@ -990,137 +1013,134 @@
                     <div class="scoreline-bar">
                         <div class="scoreline-bar-fill" style="width: ${(sl.probability / maxProb * 100).toFixed(0)}%"></div>
                     </div>
-                    <span class="scoreline-prob">${sl.probability.toFixed(1)}%</span>
+                    <span class="scoreline-prob">${sl.probability}%</span>
                 `;
                 scorelineList.appendChild(item);
             });
-            
+
+            // 大球/小球概率
+            document.getElementById('overProbability').textContent = Math.round(data.overProbability * 100) + '%';
+            document.getElementById('underProbability').textContent = Math.round(data.underProbability * 100) + '%';
+            document.getElementById('factorConsensus').textContent = Math.round(data.factorConsensus * 100) + '%';
+
             // 信息差
-            document.getElementById('infoEdgeSummary').textContent = data.info_edge_summary;
-            document.getElementById('infoEdgeImpact').textContent = (data.info_edge_impact * 100).toFixed(1) + '%';
-            document.getElementById('playerImpact').textContent = Math.round(data.player_impact * 100) + '%';
-            document.getElementById('signalConsistency').textContent = Math.round(data.signal_consistency * 100) + '%';
-            
-            // 各因子影响
+            document.getElementById('infoEdgeSummary').textContent = data.infoEdge.summary;
+            document.getElementById('infoEdgeImpact').textContent = (data.infoEdge.impact * 100).toFixed(1) + '%';
+            document.getElementById('playerImpact').textContent = Math.round(data.infoEdge.playerImpact * 100) + '%';
+            document.getElementById('signalConsistency').textContent = Math.round(data.infoEdge.consistency * 100) + '%';
+
+            // 各因子影响 (新版: multiplier格式)
             const factorList = document.getElementById('factorList');
             factorList.innerHTML = '';
-            for (const [name, detail] of Object.entries(data.factors_detail)) {
+            for (const [name, detail] of Object.entries(data.factorsDetail)) {
+                const mult = parseFloat(detail.multiplier);
+                const deviation = ((mult - 1) * 100);
+                const impactClass = deviation >= 0 ? 'positive' : 'negative';
+                const impactSign = deviation >= 0 ? '+' : '';
                 const item = document.createElement('div');
                 item.className = 'factor-item';
-                const impact = parseFloat(detail.impact);
-                const impactClass = impact >= 0 ? 'positive' : 'negative';
-                const impactSign = impact >= 0 ? '+' : '';
                 item.innerHTML = `
                     <span class="factor-name">${name}</span>
-                    <span class="factor-impact ${impactClass}">${impactSign}${detail.impact}</span>
+                    <span class="factor-impact ${impactClass}">${impactSign}${deviation.toFixed(1)}% (×${mult.toFixed(3)})</span>
                 `;
                 factorList.appendChild(item);
             }
-            
-            // 动态权重调整
+
+            // 权重调整 → 因子共识信息
             const weightList = document.getElementById('weightList');
-            if (Object.keys(data.weight_adjustments).length > 0) {
-                weightList.innerHTML = '';
-                for (const [name, detail] of Object.entries(data.weight_adjustments)) {
-                    const item = document.createElement('div');
-                    item.className = 'weight-item';
-                    item.innerHTML = `
-                        <span>${name}</span>
-                        <span class="weight-change">${detail.default} → ${detail.current} (${detail.change})</span>
-                    `;
-                    weightList.appendChild(item);
-                }
-            } else {
-                weightList.innerHTML = '<div style="color: #8892b0; font-size: 0.85rem; text-align: center;">启用实时数据后显示动态权重调整</div>';
-            }
-            
-            // 疲劳因子分析
+            weightList.innerHTML = `
+                <div class="factor-item">
+                    <span class="factor-name">因子共识度</span>
+                    <span class="factor-impact ${data.factorConsensus > 0.6 ? 'positive' : 'negative'}">
+                        ${Math.round(data.factorConsensus * 100)}%
+                    </span>
+                </div>
+                <div class="factor-item">
+                    <span class="factor-name">数据质量指数</span>
+                    <span class="factor-impact">${Math.round(data.dataQuality * 100)}%</span>
+                </div>
+                <div class="factor-item">
+                    <span class="factor-name">模型版本</span>
+                    <span class="factor-impact" style="color:#c084fc">v${data.modelVersion}</span>
+                </div>
+            `;
+
+            // 疲劳因子
             const fatigueDetail = document.getElementById('fatigueDetail');
             fatigueDetail.innerHTML = `
                 <div class="factor-item">
                     <span class="factor-name">综合疲劳指数</span>
-                    <span class="factor-impact">${data.fatigue_index.toFixed(2)}</span>
+                    <span class="factor-impact">${data.fatigue.index.toFixed(2)}</span>
                 </div>
                 <div class="factor-item">
                     <span class="factor-name">对进球影响</span>
-                    <span class="factor-impact negative">-${data.fatigue_impact.toFixed(1)}%</span>
+                    <span class="factor-impact negative">${(data.fatigue.percent).toFixed(1)}%</span>
                 </div>
                 <div class="factor-item">
                     <span class="factor-name">下半场进球占比</span>
-                    <span class="factor-impact">${data.second_half_ratio.toFixed(1)}%</span>
+                    <span class="factor-impact">${data.fatigue.secondHalfRatio.toFixed(0)}%</span>
+                </div>
+                <div class="factor-item">
+                    <span class="factor-name">主队休息天数</span>
+                    <span class="factor-impact">${data.fatigue.restDays.home}天</span>
+                </div>
+                <div class="factor-item">
+                    <span class="factor-name">客队休息天数</span>
+                    <span class="factor-impact">${data.fatigue.restDays.away}天</span>
                 </div>
             `;
-            
+
             // 关键洞察
             const insightsList = document.getElementById('insightsList');
             insightsList.innerHTML = '';
-            data.key_insights.forEach(insight => {
+            data.insights.forEach(insight => {
                 const item = document.createElement('div');
                 item.className = 'insight-item';
                 item.textContent = insight;
                 insightsList.appendChild(item);
             });
-            
+
             // 实时数据详情
             const liveDataDetail = document.getElementById('liveDataDetail');
-            if (data.live_data_summary) {
-                const summary = data.live_data_summary;
+            if (data.infoEdge.signalCount > 0) {
                 liveDataDetail.innerHTML = `
+                    <div class="info-edge-summary">${data.infoEdge.summary}</div>
                     <div class="factor-list">
                         <div class="factor-item">
-                            <span class="factor-name">赔率数据</span>
-                            <span class="factor-impact ${summary.odds_available ? 'positive' : 'negative'}">${summary.odds_available ? '✓ 可用' : '✗ 不可用'}</span>
+                            <span class="factor-name">信号总数</span>
+                            <span class="factor-impact positive">${data.infoEdge.signalCount} 个</span>
                         </div>
                         <div class="factor-item">
-                            <span class="factor-name">伤病信息</span>
-                            <span class="factor-impact ${summary.injuries_available ? 'positive' : 'negative'}">${summary.injuries_available ? '✓ 可用' : '✗ 不可用'}</span>
+                            <span class="factor-name">信号一致性</span>
+                            <span class="factor-impact">${Math.round(data.infoEdge.consistency * 100)}%</span>
                         </div>
                         <div class="factor-item">
-                            <span class="factor-name">发布会言论</span>
-                            <span class="factor-impact ${summary.press_available ? 'positive' : 'negative'}">${summary.press_available ? '✓ 可用' : '✗ 不可用'}</span>
+                            <span class="factor-name">球员状态影响</span>
+                            <span class="factor-impact">${Math.round(data.infoEdge.playerImpact * 100)}%</span>
                         </div>
                         <div class="factor-item">
-                            <span class="factor-name">阵容信息</span>
-                            <span class="factor-impact ${summary.lineup_available ? 'positive' : 'negative'}">${summary.lineup_available ? '✓ 可用' : '✗ 不可用'}</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">历史交锋</span>
-                            <span class="factor-impact ${summary.h2h_available ? 'positive' : 'negative'}">${summary.h2h_available ? '✓ 可用' : '✗ 不可用'}</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">天气数据</span>
-                            <span class="factor-impact ${summary.weather_available ? 'positive' : 'negative'}">${summary.weather_available ? '✓ 可用' : '✗ 不可用'}</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">裁判信息</span>
-                            <span class="factor-impact ${summary.referee_available ? 'positive' : 'negative'}">${summary.referee_available ? '✓ 可用' : '✗ 不可用'}</span>
+                            <span class="factor-name">辅助信号影响</span>
+                            <span class="factor-impact">${Math.round(data.infoEdge.auxiliaryImpact * 100)}%</span>
                         </div>
                     </div>
                 `;
             } else {
-                liveDataDetail.innerHTML = '<div style="color: #8892b0; font-size: 0.85rem; text-align: center;">启用实时数据后显示详情</div>';
+                liveDataDetail.innerHTML = '<div style="color: #8892b0; font-size: 0.85rem; text-align: center;">无实时数据信号输入</div>';
             }
         }
 
-        // 切换折叠面板
-        function toggleCollapsible(id) {
-            const element = document.getElementById(id);
-            element.classList.toggle('open');
-        }
-
-        // 切换自动刷新
         function toggleAutoRefresh() {
-            const autoRefresh = document.getElementById('autoRefresh').checked;
-            
-            if (autoRefresh) {
-                // 每5分钟刷新一次
-                autoRefreshInterval = setInterval(doPrediction, 5 * 60 * 1000);
+            const autoRefresh = document.getElementById('autoRefresh');
+            if (autoRefresh.checked) {
+                autoRefreshInterval = setInterval(doPrediction, 30000); // 30秒刷新
             } else {
-                if (autoRefreshInterval) {
-                    clearInterval(autoRefreshInterval);
-                    autoRefreshInterval = null;
-                }
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
             }
+        }
+
+        function toggleCollapsible(id) {
+            document.getElementById(id).classList.toggle('open');
         }
     </script>
 </body>
