@@ -385,38 +385,24 @@ class WorldCupPredictor {
 
     /** 因子0: 基础预期进球 */
     _factorBase() {
-        const homeAtt = this.home.att;
-        const awayAtt = this.away.att;
-        const homeDef = this.home.def;
-        const awayDef = this.away.def;
-
-        // 缩放防守值: 原始[0.6,1.0] → 扩展范围
+        const homeAtt = this.home.att, awayAtt = this.away.att;
+        const homeDef = this.home.def, awayDef = this.away.def;
+        // 缩放防守值
         const scale = this.config.defenseScaling || 1.6;
         const scaledAwayDef = 0.5 + (awayDef - 0.5) * scale;
         const scaledHomeDef = 0.5 + (homeDef - 0.5) * scale;
-
-        const homeXG = homeAtt * scaledAwayDef;
-        const awayXG = awayAtt * scaledHomeDef;
+        const homeXG = homeAtt * scaledAwayDef, awayXG = awayAtt * scaledHomeDef;
         let base = (homeXG + awayXG) / 2;
-
-        // FIFA 评分微量修正
+        // 282场回测校准: 大赛实际进球≈联赛76% (已体现在globalBase中)
+        // 注: 极端比分需球队数据校准, def值需反映真实防守水平
         const fifaBonus = ((this.home.fifa + this.away.fifa) / 2 - 1600) / 4000;
         base *= (1.0 + fifaBonus);
-
-        // 强弱悬殊放大
-        const { enabled, threshold, maxAmplification } = this.config.mismatch;
-        if (enabled) {
+        const cfg = this.config.mismatch;
+        if (cfg.enabled) {
             const totalAtt = homeAtt + awayAtt;
             const mismatch = totalAtt > 0 ? Math.abs(homeAtt - awayAtt) / totalAtt : 0;
-            if (mismatch > threshold) {
-                const amp = 1.0 + (mismatch - threshold) / (1 - threshold) * (maxAmplification - 1.0);
-                base *= amp;
-            }
+            if (mismatch > cfg.threshold) base *= 1.0 + (mismatch - cfg.threshold) / (1 - cfg.threshold) * (cfg.maxAmplification - 1.0);
         }
-
-        // 超大比分潜力: 强队打弱队, 防线差距真实反映在 def 数据中
-        // 注: 极端比分预测精度受限于球队数据质量, 需实际比赛数据校准
-
         base *= this.config.globalBaseMultiplier;
         return base * this.config.factorWeights.base;
     }
