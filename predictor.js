@@ -142,10 +142,10 @@ const CONFIG = {
 
     // 赔率辅助校验权重 — 384路网格最优 (282场)
     oddsAux: {
-        maxAdjustment: 0.16,     // max adjustment ±16%
-        agreeBoost: 0.75,        // agree: 75% boost
-        disagreeNudge: 0.65,     // disagree: 65% toward market
-        disagreeThreshold: 0.15, // sensitive threshold
+        maxAdjustment: 0.20,     // 480路网格最优: ±20%
+        agreeBoost: 0.50,        // agree: 50% boost
+        disagreeNudge: 0.80,     // disagree: 80% toward market
+        disagreeThreshold: 0.10, // sensitive: 10%
     },
 
     // 大比分模型 — WC-only 192路网格最优 (WC 59.6%/blowout 58%)
