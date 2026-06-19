@@ -923,10 +923,29 @@ class WorldCupPredictor {
         const overProb = scorelines.reduce((s, sl) => s + (sl.isOver ? sl.probability : 0), 0);
         const underProb = scorelines.reduce((s, sl) => s + (sl.isUnder ? sl.probability : 0), 0);
 
-        // 大比分风险: 纯展示, 基于赛后xG > 3.5 或 att差距 > 0.7
-        const attGap = Math.abs(this.home.att - this.away.att);
-        const showBlowout = clampedExpected > 3.5 || attGap > 0.7;
-        const blowoutScores = showBlowout ? this._predictBlowout(clampedExpected) : null;
+        // ====== 大比分专用模型 (并行, 不影响主模型) ======
+        const scaledAwayDef = 0.5 + (this.away.def - 0.5) * (this.config.defenseScaling || 1.6);
+        const scaledHomeDef = 0.5 + (this.home.def - 0.5) * (this.config.defenseScaling || 1.6);
+        const strongAtt = Math.max(this.home.att, this.away.att);
+        const weakDef = this.home.att > this.away.att ? scaledAwayDef : scaledHomeDef;
+        const weakAtt = Math.min(this.home.att, this.away.att);
+        const gapRatio = strongAtt / Math.max(weakDef, 0.3);
+        const showBlowout = gapRatio > 1.5;
+
+        let blowoutModel = null;
+        if (showBlowout) {
+            // 大比分专用: 强攻×弱防, 指数放大
+            const blowoutXG = (strongAtt * weakDef) * (1.0 + (gapRatio - 1.5) * 0.8);
+            const blowoutClamped = clamp(blowoutXG, 0.5, 8.0);
+            const blowoutScores = this._predictBlowout(blowoutClamped);
+            const blowoutIsOver = blowoutClamped > this.handicap;
+            blowoutModel = {
+                expectedGoals: parseFloat(blowoutClamped.toFixed(2)),
+                prediction: blowoutIsOver ? '大球' : '小球',
+                gapRatio: parseFloat(gapRatio.toFixed(2)),
+                scores: blowoutScores.map(s => ({ score: s.score, probability: parseFloat((s.probability * 100).toFixed(1)), total: s.total })),
+            };
+        }
 
         // 比分分布概率和 — 用于展示, 不改变O/U判定
 
@@ -1001,9 +1020,7 @@ class WorldCupPredictor {
             },
             // 竞彩赔率资金流向分析 (反向指标)
             marketAnalysis: this._buildMarketAnalysis(isOver, clampedExpected, marketAnalysis),
-            blowoutRisk: showBlowout || false,
-            gapRatio: parseFloat((attGap || 0).toFixed(2)),
-            blowoutScores: blowoutScores ? blowoutScores.map(s => ({ score: s.score, probability: parseFloat((s.probability * 100).toFixed(1)), total: s.total })) : null,
+            blowoutModel: blowoutModel,
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),

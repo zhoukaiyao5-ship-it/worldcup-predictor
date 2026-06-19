@@ -937,10 +937,14 @@
                         <div style="margin-top:6px;font-size:0.75rem;color:#8892b0;text-align:center" id="mktNote"></div>
                     </div>
 
-                    <!-- 大比分预警 -->
-                    <div class="scorelines fade-in" id="blowoutSection" style="display:none;border-color:#ef4444">
-                        <div class="scorelines-title" style="color:#f87171">⚠️ 大比分预警 (实力差×<span id="gapRatio">--</span>)</div>
-                        <div style="font-size:0.85rem;color:#fca5a5;text-align:center;padding:4px 0" id="blowoutScores">--</div>
+                    <!-- 强弱悬殊专用模型 -->
+                    <div class="scorelines fade-in" id="blowoutSection" style="display:none">
+                        <div class="scorelines-title" style="color:#f87171">⚠️ 强弱悬殊专用模型 <span style="font-size:0.7rem;color:#fbbf24">(gap×<span id="blowoutGap">--</span>)</span></div>
+                        <div style="display:flex;justify-content:space-around;padding:8px 0">
+                            <div style="text-align:center"><div style="font-size:1.5rem;font-weight:bold;color:#f87171" id="blowoutPred">--</div><div style="font-size:0.7rem;color:#8892b0">大比分预测</div></div>
+                            <div style="text-align:center"><div style="font-size:1.5rem;font-weight:bold;color:#fbbf24" id="blowoutXG">--</div><div style="font-size:0.7rem;color:#8892b0">预期进球</div></div>
+                        </div>
+                        <div class="scoreline-list" id="blowoutScoreList"></div>
                     </div>
 
                     <!-- 比分预测 -->
@@ -1322,15 +1326,21 @@
             });
 
             // 大球/小球概率
-            // 大比分预警
+            // 大比分专用模型
             const blowoutEl = document.getElementById('blowoutSection');
-            if (data.blowoutRisk && data.blowoutScores) {
+            if (data.blowoutModel) {
                 blowoutEl.style.display = 'block';
-                document.getElementById('gapRatio').textContent = data.gapRatio;
-                const blowoutLines = data.blowoutScores.map(function(s) {
-                    return s.score;
-                }).join(' ');
-                document.getElementById('blowoutScores').textContent = blowoutLines;
+                const bm = data.blowoutModel;
+                document.getElementById('blowoutGap').textContent = bm.gapRatio;
+                document.getElementById('blowoutPred').textContent = bm.prediction;
+                document.getElementById('blowoutXG').textContent = bm.expectedGoals + '球';
+                // Render scorelines
+                const blowoutList = document.getElementById('blowoutScoreList');
+                const maxProb = Math.max(...bm.scores.map(s => s.probability));
+                blowoutList.innerHTML = bm.scores.map(function(s) {
+                    const barW = maxProb > 0 ? (s.probability / maxProb * 100).toFixed(0) : 0;
+                    return '<div class="scoreline-row"><span class="scoreline-score">' + s.score + '</span><div class="scoreline-bar"><div class="scoreline-bar-fill" style="width:' + barW + '%"></div></div><span class="scoreline-prob">' + s.probability.toFixed(0) + '%</span></div>';
+                }).join('');
             } else {
                 blowoutEl.style.display = 'none';
             }
