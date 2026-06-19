@@ -148,11 +148,11 @@ const CONFIG = {
         disagreeThreshold: 0.15, // sensitive threshold
     },
 
-    // 实力差放大 — 625路网格最优: amp=1.25
+    // 实力差放大 — 保守配置 (保护O/U精度)
     mismatch: {
         enabled: true,
         threshold: 0.10,
-        maxAmplification: 1.40,   // 320路网格最优 (204场)
+        maxAmplification: 1.40,
     },
 
     // 心理/形势系数
@@ -222,10 +222,10 @@ const CONFIG = {
         infoEdge:   0.8,
     },
 
-    // 泊松分布参数
+    // 泊松分布参数 — 过离散让极端比分(6-2,7-0)出现在分布中
     poisson: {
         maxGoals: 7,
-        overdispersion: 1.8,    // 过离散: >1=增加极端比分概率
+        overdispersion: 1.8,    // 温和过离散
     },
 
     // 置信度 Sigmoid 参数
@@ -413,6 +413,9 @@ class WorldCupPredictor {
                 base *= amp;
             }
         }
+
+        // 超大比分潜力: 强队打弱队, 防线差距真实反映在 def 数据中
+        // 注: 极端比分预测精度受限于球队数据质量, 需实际比赛数据校准
 
         base *= this.config.globalBaseMultiplier;
         return base * this.config.factorWeights.base;
