@@ -1330,8 +1330,8 @@
                 document.getElementById('mktValueDir').textContent = ma.isContrarian ? ma.valueDirection : '方向一致';
                 document.getElementById('mktValueDir').style.color = ma.isContrarian ? '#a78bfa' : '#4ade80';
                 document.getElementById('mktNote').textContent = ma.isContrarian
-                    ? '模型与赔率有差异, 已做±2%微调'
-                    : '模型为主, 赔率辅助校验 ±2%';
+                    ? '模型与赔率有差异, 参考市场倾向调整'
+                    : '模型为主, 赔率辅助校验';
                 document.getElementById('marketSection').style.display = 'block';
             } else {
                 document.getElementById('marketSection').style.display = 'none';
