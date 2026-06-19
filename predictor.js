@@ -140,12 +140,12 @@ const CONFIG = {
         '决赛': 0.84,
     },
 
-    // 赔率辅助校验权重 — 320路网格回测最优
+    // 赔率辅助校验权重 — 384路网格最优 (282场)
     oddsAux: {
-        maxAdjustment: 0.10,     // max adjustment ±10%
-        agreeBoost: 1.0,         // agree: full boost
-        disagreeNudge: 0.50,     // disagree: 50% nudge
-        disagreeThreshold: 0.20, // low threshold for disagreement
+        maxAdjustment: 0.16,     // max adjustment ±16%
+        agreeBoost: 0.75,        // agree: 75% boost
+        disagreeNudge: 0.65,     // disagree: 65% toward market
+        disagreeThreshold: 0.15, // sensitive threshold
     },
 
     // 实力差放大 — 625路网格最优: amp=1.25
