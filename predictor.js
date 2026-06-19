@@ -323,7 +323,7 @@ class WorldCupPredictor {
      * @param {string} [morale='均衡'] - 士气类型
      * @param {object} [opts] - 可选参数 { homeAdvantage, restDaysHome, restDaysAway }
      */
-    setMatch(home, away, stage = '小组赛', handicap = 2.5, situation = '常规', morale = '均衡', opts = {}) {
+    setMatch(home, away, stage = '小组赛', handicap = 2.5, situation = '常规', morale = '均衡', opts = {}, tournament = null) {
         this.home = validateTeam(home);
         this.away = validateTeam(away);
         this.homeName = home.trim();
@@ -337,6 +337,7 @@ class WorldCupPredictor {
         this.handicap = validateHandicap(handicap);
         this.situation = situation;
         this.morale = morale;
+        this.tournament = tournament; // 赛事类型: 'WC'|'Euro'|'Copa'|'Qualifier'
 
         // 可选参数
         this.homeAdvantage = opts.homeAdvantage ?? false;
@@ -827,9 +828,20 @@ class WorldCupPredictor {
         const hMiss = this.playerMissing?.home || 0;
         const aMiss = this.playerMissing?.away || 0;
         if (hMiss === 0 && aMiss === 0) return 1.0;
-        // 缺阵降低攻击力, 提高防守脆弱度 → 综合影响总进球
         const impact = 1.0 - (hMiss + aMiss) * 0.015;
         return clamp(impact, 0.88, 1.0);
+    }
+
+    /** 赛事区域校准因子: 不同赛事场均进球差异显著 */
+    _factorTournament() {
+        switch (this.tournament) {
+            case 'Copa':     return 0.81;
+            case 'Euro':     return 0.90;
+            case 'AFCON':    return 0.92;
+            case 'Asian':    return 0.95;
+            case 'Qualifier':return 1.16;
+            default:         return 1.00;
+        }
     }
 
     // ==================== 主预测 ====================
@@ -854,6 +866,7 @@ class WorldCupPredictor {
         const homeF = this._factorHome();
         const infoEdgeR = this._factorInfoEdge();
         const playerF = this._factorPlayer();
+        const tournamentF = this._factorTournament();
 
         // --- 全乘法公式 ---
         const expected = baseVal
@@ -869,7 +882,8 @@ class WorldCupPredictor {
             * infoEdgeR.factor
             * infoEdgeR.playerImpact
             * infoEdgeR.auxiliaryImpact
-            * playerF;
+            * playerF
+            * tournamentF;
 
         let clampedExpected = clamp(expected, 0.3, 7.0);
 
@@ -1227,7 +1241,8 @@ class WorldCupPredictor {
             try {
                 this.setMatch(m.home, m.away, m.stage || '小组赛', m.handicap || 2.5,
                     m.situation || '常规', m.morale || '均衡',
-                    { homeAdvantage: m.homeAdvantage ?? false, restDaysHome: m.restDaysHome ?? 7, restDaysAway: m.restDaysAway ?? 7 });
+                    { homeAdvantage: m.homeAdvantage ?? false, restDaysHome: m.restDaysHome ?? 7, restDaysAway: m.restDaysAway ?? 7 },
+                    m.tournament || null);
                 if (m.liveData) this.setLiveData(m.liveData);
                 if (m.marketHeat !== undefined) this.setMarketHeat(m.marketHeat);
 
