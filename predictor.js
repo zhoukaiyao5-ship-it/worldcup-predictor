@@ -126,6 +126,14 @@ const CONFIG = {
         '决赛': 0.84,
     },
 
+    // 赔率辅助校验权重 — 320路网格回测最优
+    oddsAux: {
+        maxAdjustment: 0.10,     // max adjustment ±10%
+        agreeBoost: 1.0,         // agree: full boost
+        disagreeNudge: 0.50,     // disagree: 50% nudge
+        disagreeThreshold: 0.20, // low threshold for disagreement
+    },
+
     // 实力差放大 — 625路网格最优: amp=1.25
     mismatch: {
         enabled: true,
@@ -795,14 +803,12 @@ class WorldCupPredictor {
             const discrepancy = modelLean - capitalBias;
 
             // 赔率辅助微调: 方向一致时增强信心, 分歧大时略微回归
-            // 最大影响 ±4%, 远小于之前的 ±45%
-            const marketAdjustment = clamp(capitalBias * 0.04, -0.04, 0.04);
+            const { maxAdjustment, agreeBoost, disagreeNudge, disagreeThreshold } = this.config.oddsAux;
+            const marketAdjustment = clamp(capitalBias * maxAdjustment, -maxAdjustment, maxAdjustment);
             if (modelDir === capitalDir) {
-                // 模型与赔率方向一致 → 温和增强
-                clampedExpected *= (1.0 + Math.abs(marketAdjustment) * 0.5);
-            } else if (Math.abs(discrepancy) > 0.4) {
-                // 严重分歧 → 略微向赔率方向靠拢 (赔率可能有额外信息)
-                clampedExpected = clampedExpected * (1.0 + marketAdjustment * 0.33);
+                clampedExpected *= (1.0 + Math.abs(marketAdjustment) * agreeBoost);
+            } else if (Math.abs(discrepancy) > disagreeThreshold) {
+                clampedExpected *= (1.0 + marketAdjustment * disagreeNudge);
             }
             clampedExpected = clamp(clampedExpected, 0.3, 7.0);
 
