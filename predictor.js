@@ -103,15 +103,28 @@ const TACTIC_MATRIX = {
 
 // ==================== 可配置参数 (可从外部覆盖) ====================
 const CONFIG = {
-    // 阶段系数 — 改为乘法，值 < 1.0 表示进球期望下降
+    // 全局校准乘数 — 回测最优: 1.45
+    globalBaseMultiplier: 1.45,
+
+    // 防守缩放系数 — 回测最优: 2.0 (拉开强队与弱队防守差距)
+    defenseScaling: 2.0,
+
+    // 阶段系数 — 值 < 1.0 表示进球期望下降
     stageMultiplier: {
-        '小组赛': 0.88,
-        '1/16决赛': 0.82,
-        '1/8决赛': 0.82,
-        '1/4决赛': 0.78,
-        '半决赛': 0.74,
-        '三四名决赛': 1.05, // 三四名决赛通常更开放
-        '决赛': 0.72,
+        '小组赛': 1.00,
+        '1/16决赛': 0.96,
+        '1/8决赛': 0.96,
+        '1/4决赛': 0.92,
+        '半决赛': 0.88,
+        '三四名决赛': 1.04,
+        '决赛': 0.86,
+    },
+
+    // 实力差放大 — 回测最优: amp=1.2
+    mismatch: {
+        enabled: true,
+        threshold: 0.10,
+        maxAmplification: 1.20,
     },
 
     // 心理/形势系数
@@ -136,63 +149,63 @@ const CONFIG = {
 
     // 疲劳基准参数
     fatigue: {
-        minRestDays: 3,        // 最少休息天数
-        fullRecoveryDays: 7,   // 完全恢复所需天数
-        maxFatigueImpact: 0.06, // 最大疲劳影响 (6% 进球期望下降)
-        depthElasticity: 0.5,  // 阵容深度对疲劳的弹性
+        minRestDays: 3,
+        fullRecoveryDays: 7,
+        maxFatigueImpact: 0.06,
+        depthElasticity: 0.5,
     },
 
     // 市场热度 — 连续sigmoid参数
     market: {
-        center: 0.5,           // 中性热度
-        steepness: 6.0,        // sigmoid 陡度
-        maxImpact: 0.08,       // 最大市场影响 (±8%)
+        center: 0.5,
+        steepness: 6.0,
+        maxImpact: 0.08,
     },
 
     // 信息差 — 贝叶斯先验
     infoEdge: {
-        priorStrength: 0.5,    // 先验强度 (越高越不敏感)
+        priorStrength: 0.5,
         signalWeight: {
-            rotation: 0.25,    // 轮换信号权重
-            press: 0.15,       // 发布会信号权重
-            injury: 0.35,      // 伤病信号权重
-            odds: 0.45,        // 赔率变动权重
-            weather: 0.12,     // 天气信号权重
-            referee: 0.08,     // 裁判信号权重
-            h2h: 0.15,         // 历史交锋权重
+            rotation: 0.25,
+            press: 0.15,
+            injury: 0.35,
+            odds: 0.45,
+            weather: 0.12,
+            referee: 0.08,
+            h2h: 0.15,
         },
-        consistencyBoost: 1.25, // 信号一致时增益
-        consistencyPenalty: 0.75, // 信号分歧时惩罚
+        consistencyBoost: 1.25,
+        consistencyPenalty: 0.75,
     },
 
-    // 因子权重
+    // 因子权重 (回测优化: 降低defense权重防止过度压制进球)
     factorWeights: {
-        base:       1.0,   // 基础预期
-        stage:      1.0,   // 比赛阶段
-        tactic:     0.9,   // 战术相克
-        defense:    0.9,   // 防守质量
-        market:     0.7,   // 市场热度
-        form:       0.8,   // 近期状态
-        setPiece:   0.4,   // 定位球
-        psychology: 0.6,   // 心理因素
-        fatigue:    0.5,   // 疲劳
-        home:       0.3,   // 主场优势
-        infoEdge:   0.8,   // 信息差
+        base:       1.0,
+        stage:      1.0,
+        tactic:     0.9,
+        defense:    0.6,   // 回测优化: 0.9→0.6
+        market:     0.7,
+        form:       0.8,
+        setPiece:   0.4,
+        psychology: 0.6,
+        fatigue:    0.5,
+        home:       0.3,
+        infoEdge:   0.8,
     },
 
     // 泊松分布参数
     poisson: {
-        maxGoals: 7,         // 最大预测进球
-        overdispersion: 1.05, // 过度离散参数 (>1 = 方差更大)
+        maxGoals: 7,
+        overdispersion: 1.05,
     },
 
     // 置信度 Sigmoid 参数
     confidence: {
-        steepness: 4.0,      // sigmoid 陡度
-        midpoint: 0.3,       // 中点 (edge值)
-        baseConfidence: 0.55, // 基准置信度
-        consensusWeight: 0.15, // 共识度在置信度中的权重
-        dataQualityWeight: 0.10, // 数据质量在置信度中的权重
+        steepness: 4.0,
+        midpoint: 0.3,
+        baseConfidence: 0.55,
+        consensusWeight: 0.15,
+        dataQualityWeight: 0.10,
     },
 };
 
@@ -340,24 +353,44 @@ class WorldCupPredictor {
 
     // ==================== 因子计算 (全乘法) ====================
 
-    /** 因子0: 基础预期进球 — 基于攻击力/防守力的平衡计算 */
+    /** 因子0: 基础预期进球 */
     _factorBase() {
         const homeAtt = this.home.att;
         const awayAtt = this.away.att;
         const homeDef = this.home.def;
         const awayDef = this.away.def;
 
-        // 每个队的预期进球 = 自身攻击力 × 对手防守脆弱度
-        const homeXG = homeAtt * awayDef;  // awayDef < 1 表示防守好
-        const awayXG = awayAtt * homeDef;
+        // 缩放防守值: 原始[0.6,1.0] → 扩展[0.55,1.65]
+        // 弱队防守变差, 强队防守更好 — 拉开差距
+        const scale = this.config.defenseScaling || 1.7;
+        const scaledHomeDef = 0.5 + (homeDef - 0.5) * scale;
+        const scaledAwayDef = 0.5 + (awayDef - 0.5) * scale;
 
-        // 总预期 = 双方之和 / 2 (中立场均分)
-        const base = (homeXG + awayXG) / 2;
+        // 预期进球 = 攻击力 × 对手防守脆弱度(已缩放)
+        const homeXG = homeAtt * scaledAwayDef;
+        const awayXG = awayAtt * scaledHomeDef;
 
-        // FIF A评分微量修正
+        let base = (homeXG + awayXG) / 2;
+
+        // FIFA 评分微量修正
         const fifaBonus = ((this.home.fifa + this.away.fifa) / 2 - 1600) / 4000;
+        base *= (1.0 + fifaBonus);
 
-        return base * (1.0 + fifaBonus) * this.config.factorWeights.base;
+        // 强弱悬殊放大
+        const { enabled, threshold, maxAmplification } = this.config.mismatch;
+        if (enabled) {
+            const totalAtt = homeAtt + awayAtt;
+            const mismatch = totalAtt > 0 ? Math.abs(homeAtt - awayAtt) / totalAtt : 0;
+            if (mismatch > threshold) {
+                const amp = 1.0 + (mismatch - threshold) / (1 - threshold) * (maxAmplification - 1.0);
+                base *= amp;
+            }
+        }
+
+        // 全局校准
+        base *= this.config.globalBaseMultiplier;
+
+        return base * this.config.factorWeights.base;
     }
 
     /** 因子1: 比赛阶段修正 (乘法) */
