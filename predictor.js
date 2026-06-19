@@ -90,6 +90,8 @@ const TEAM_DATABASE = {
     '巴拿马':   { att: 1.15, def: 0.95, style: 'defensive', form: 1.1, setPiece: 0.28, phys: 7.0, depth: 6.0, fifa: 1520 },
     '牙买加':   { att: 1.30, def: 0.92, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.8, depth: 6.2, fifa: 1510 },
     '海地':     { att: 1.20, def: 0.95, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1490 },
+    '委内瑞拉': { att: 1.30, def: 0.85, style: 'counter',   form: 1.5, setPiece: 0.30, phys: 7.5, depth: 6.5, fifa: 1578 },
+    '玻利维亚': { att: 1.10, def: 1.10, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 6.5, depth: 5.5, fifa: 1415 },
     '库拉索':   { att: 1.15, def: 0.98, style: 'defensive', form: 1.1, setPiece: 0.25, phys: 7.2, depth: 5.8, fifa: 1410 },
 
     // 大洋洲
@@ -109,10 +111,10 @@ const TACTIC_MATRIX = {
 // ==================== 可配置参数 (可从外部覆盖) ====================
 const CONFIG = {
     // 全局校准乘数 — 回测最优: 1.45
-    // 全局校准乘数 — 750路网格最优 (142场): 1.55
+    // 全局校准乘数 — 回测最优
     globalBaseMultiplier: 1.55,
 
-    // 防守缩放系数 — 750路网格最优 (142场): 2.4
+    // 防守缩放系数 — 回测最优
     defenseScaling: 2.4,
 
     // 阶段系数 — 值 < 1.0 表示进球期望下降
@@ -788,6 +790,48 @@ class WorldCupPredictor {
         }
     }
 
+    // ============================================================
+    // 球员数据模块 — 核心球员缺阵影响
+    // ============================================================
+    static KEY_PLAYERS = {
+        '法国':['姆巴佩','格列兹曼','楚阿梅尼'],'阿根廷':['梅西','阿尔瓦雷斯','恩佐'],
+        '巴西':['维尼修斯','罗德里戈','阿利松'],'英格兰':['凯恩','贝林厄姆','萨卡'],
+        '葡萄牙':['C罗','B费','莱奥'],'西班牙':['亚马尔','佩德里','罗德里'],
+        '德国':['穆西亚拉','维尔茨','基米希'],'荷兰':['范戴克','加克波','德容'],
+        '比利时':['德布劳内','卢卡库','多库'],'克罗地亚':['莫德里奇','格瓦迪奥尔'],
+        '挪威':['哈兰德','厄德高'],'意大利':['多纳鲁马','巴雷拉'],
+        '乌拉圭':['巴尔韦德','努涅斯'],'哥伦比亚':['迪亚斯','J罗'],
+        '摩洛哥':['阿什拉夫','齐耶赫'],'塞内加尔':['马内','库利巴利'],
+        '日本':['三笘薫','久保建英'],'韩国':['孙兴慜','李刚仁'],
+        '美国':['普利西奇','麦肯尼'],'加拿大':['戴维斯','戴维'],
+        '埃及':['萨拉赫','马尔穆什'],'加纳':['库杜斯','托马斯'],
+        '波兰':['莱万','泽林斯基'],'瑞典':['伊萨克','库卢塞夫斯基'],
+        '土耳其':['恰尔汗奥卢','居莱尔'],'奥地利':['阿拉巴','萨比策'],
+        '瑞士':['扎卡','阿坎吉'],'丹麦':['埃里克森','霍伊伦'],
+        '塞尔维亚':['米特罗维奇','弗拉霍维奇'],'乌克兰':['多夫比克','津琴科'],
+        '厄瓜多尔':['凯塞多','瓦伦西亚'],'喀麦隆':['奥纳纳','舒波莫廷'],
+        '墨西哥':['希门尼斯','洛萨诺'],'匈牙利':['索博斯洛伊','绍洛伊'],
+        '苏格兰':['罗伯逊','麦克托米奈'],'捷克':['绍切克','希克'],
+        '阿尔及利亚':['马赫雷斯','本纳赛尔'],'尼日利亚':['奥斯梅恩','卢克曼'],
+        '科特迪瓦':['阿莱','凯西'],'澳大利亚':['苏塔','古德温'],
+        '伊朗':['塔雷米','阿兹蒙'],'沙特':['多萨里','布莱希'],
+        '卡塔尔':['阿菲夫','阿里'],'伊拉克':['阿里','拉桑'],
+    };
+
+    setPlayerMissing(homeMissing, awayMissing) {
+        this.playerMissing = { home: Math.max(0, Math.min(3, homeMissing||0)), away: Math.max(0, Math.min(3, awayMissing||0)) };
+    }
+
+    /** 球员缺阵因子: 每缺1名核心球员进攻-2.5%, 防守+2% */
+    _factorPlayer() {
+        const hMiss = this.playerMissing?.home || 0;
+        const aMiss = this.playerMissing?.away || 0;
+        if (hMiss === 0 && aMiss === 0) return 1.0;
+        // 缺阵降低攻击力, 提高防守脆弱度 → 综合影响总进球
+        const impact = 1.0 - (hMiss + aMiss) * 0.015;
+        return clamp(impact, 0.88, 1.0);
+    }
+
     // ==================== 主预测 ====================
 
     predict() {
@@ -809,6 +853,7 @@ class WorldCupPredictor {
         const fatigueR = this._factorFatigue();
         const homeF = this._factorHome();
         const infoEdgeR = this._factorInfoEdge();
+        const playerF = this._factorPlayer();
 
         // --- 全乘法公式 ---
         const expected = baseVal
@@ -823,7 +868,8 @@ class WorldCupPredictor {
             * homeF
             * infoEdgeR.factor
             * infoEdgeR.playerImpact
-            * infoEdgeR.auxiliaryImpact;
+            * infoEdgeR.auxiliaryImpact
+            * playerF;
 
         let clampedExpected = clamp(expected, 0.3, 7.0);
 

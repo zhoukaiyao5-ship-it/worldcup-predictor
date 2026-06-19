@@ -158,6 +158,48 @@ const BACKTEST_MATCHES = [
     { home:'波兰',     away:'阿尔巴尼亚', stage:'1/8决赛', handicap:2.5, hScore:2, aScore:1 },
     { home:'土耳其',   away:'罗马尼亚', stage:'1/8决赛', handicap:2.5, hScore:1, aScore:0 },
     { home:'丹麦',     away:'斯洛伐克', stage:'1/8决赛', handicap:2.5, hScore:4, aScore:0 },
+
+    // ==================== Copa América 2024 (32场) ====================
+    // Group A
+    { home:'阿根廷',   away:'加拿大',   stage:'小组赛', handicap:2.5, hScore:2, aScore:0 },
+    { home:'秘鲁',     away:'智利',     stage:'小组赛', handicap:2.5, hScore:0, aScore:0 },
+    { home:'秘鲁',     away:'加拿大',   stage:'小组赛', handicap:2.5, hScore:0, aScore:1 },
+    { home:'智利',     away:'阿根廷',   stage:'小组赛', handicap:2.5, hScore:0, aScore:1 },
+    { home:'阿根廷',   away:'秘鲁',     stage:'小组赛', handicap:2.5, hScore:2, aScore:0 },
+    { home:'加拿大',   away:'智利',     stage:'小组赛', handicap:2.5, hScore:0, aScore:0 },
+    // Group B
+    { home:'厄瓜多尔', away:'委内瑞拉', stage:'小组赛', handicap:2.5, hScore:1, aScore:2 },
+    { home:'墨西哥',   away:'牙买加',   stage:'小组赛', handicap:2.5, hScore:1, aScore:0 },
+    { home:'委内瑞拉', away:'墨西哥',   stage:'小组赛', handicap:2.5, hScore:1, aScore:0 },
+    { home:'厄瓜多尔', away:'牙买加',   stage:'小组赛', handicap:2.5, hScore:3, aScore:1 },
+    { home:'墨西哥',   away:'厄瓜多尔', stage:'小组赛', handicap:2.5, hScore:0, aScore:0 },
+    { home:'牙买加',   away:'委内瑞拉', stage:'小组赛', handicap:2.5, hScore:0, aScore:3 },
+    // Group C
+    { home:'美国',     away:'玻利维亚', stage:'小组赛', handicap:2.5, hScore:2, aScore:0 },
+    { home:'乌拉圭',   away:'巴拿马',   stage:'小组赛', handicap:2.5, hScore:3, aScore:1 },
+    { home:'巴拿马',   away:'美国',     stage:'小组赛', handicap:2.5, hScore:2, aScore:1 },
+    { home:'乌拉圭',   away:'玻利维亚', stage:'小组赛', handicap:2.5, hScore:5, aScore:0 },
+    { home:'美国',     away:'乌拉圭',   stage:'小组赛', handicap:2.5, hScore:0, aScore:1 },
+    { home:'玻利维亚', away:'巴拿马',   stage:'小组赛', handicap:2.5, hScore:1, aScore:3 },
+    // Group D
+    { home:'哥伦比亚', away:'巴拉圭',   stage:'小组赛', handicap:2.5, hScore:2, aScore:1 },
+    { home:'巴西',     away:'哥斯达黎加', stage:'小组赛', handicap:2.5, hScore:0, aScore:0 },
+    { home:'巴拉圭',   away:'巴西',     stage:'小组赛', handicap:2.5, hScore:1, aScore:4 },
+    { home:'哥伦比亚', away:'哥斯达黎加', stage:'小组赛', handicap:2.5, hScore:3, aScore:0 },
+    { home:'巴西',     away:'哥伦比亚', stage:'小组赛', handicap:2.5, hScore:1, aScore:1 },
+    { home:'哥斯达黎加', away:'巴拉圭', stage:'小组赛', handicap:2.5, hScore:2, aScore:1 },
+    // Quarterfinals
+    { home:'阿根廷',   away:'厄瓜多尔', stage:'1/4决赛', handicap:2.5, hScore:1, aScore:1 },
+    { home:'委内瑞拉', away:'加拿大',   stage:'1/4决赛', handicap:2.5, hScore:1, aScore:1 },
+    { home:'哥伦比亚', away:'巴拿马',   stage:'1/4决赛', handicap:2.5, hScore:5, aScore:0 },
+    { home:'乌拉圭',   away:'巴西',     stage:'1/4决赛', handicap:2.5, hScore:0, aScore:0 },
+    // Semifinals
+    { home:'阿根廷',   away:'加拿大',   stage:'半决赛', handicap:2.5, hScore:2, aScore:0 },
+    { home:'乌拉圭',   away:'哥伦比亚', stage:'半决赛', handicap:2.5, hScore:0, aScore:1 },
+    // Third place
+    { home:'加拿大',   away:'乌拉圭',   stage:'三四名决赛', handicap:2.5, hScore:2, aScore:2 },
+    // Final
+    { home:'阿根廷',   away:'哥伦比亚', stage:'决赛', handicap:2.0, hScore:1, aScore:0 },
 ];
 
 // Standard exports
