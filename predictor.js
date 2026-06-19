@@ -366,16 +366,13 @@ class WorldCupPredictor {
         const homeDef = this.home.def;
         const awayDef = this.away.def;
 
-        // 缩放防守值: 原始[0.6,1.0] → 扩展[0.55,1.65]
-        // 弱队防守变差, 强队防守更好 — 拉开差距
-        const scale = this.config.defenseScaling || 1.7;
-        const scaledHomeDef = 0.5 + (homeDef - 0.5) * scale;
+        // 缩放防守值: 原始[0.6,1.0] → 扩展范围
+        const scale = this.config.defenseScaling || 1.6;
         const scaledAwayDef = 0.5 + (awayDef - 0.5) * scale;
+        const scaledHomeDef = 0.5 + (homeDef - 0.5) * scale;
 
-        // 预期进球 = 攻击力 × 对手防守脆弱度(已缩放)
         const homeXG = homeAtt * scaledAwayDef;
         const awayXG = awayAtt * scaledHomeDef;
-
         let base = (homeXG + awayXG) / 2;
 
         // FIFA 评分微量修正
@@ -393,9 +390,7 @@ class WorldCupPredictor {
             }
         }
 
-        // 全局校准
         base *= this.config.globalBaseMultiplier;
-
         return base * this.config.factorWeights.base;
     }
 
