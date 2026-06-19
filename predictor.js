@@ -148,12 +148,12 @@ const CONFIG = {
         disagreeThreshold: 0.15, // sensitive threshold
     },
 
-    // 大比分模型 — 500路网格最优 (59.6%正常/50%大比分)
+    // 大比分模型 — WC-only 192路网格最优 (WC 59.6%/blowout 58%)
     blowout: {
-        gapThreshold: 1.3,       // 较低阈值 — 更多比赛触发预警
-        ampFactor: 0.4,          // 温和放大 — 不过度夸大
-        maxAmplification: 1.5,   // 最多1.5倍
-        baseMultiplier: 0.8,     // 基础保守缩放
+        gapThreshold: 1.4,       // WC最优: 适中阈值
+        ampFactor: 0.2,          // WC最优: 保守放大
+        maxAmplification: 1.3,   // WC最优: 紧上限
+        baseMultiplier: 0.7,     // WC最优: 基础保守
     },
 
     // 实力差放大 — 保守配置 (保护O/U精度)
