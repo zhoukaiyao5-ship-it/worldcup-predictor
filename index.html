@@ -1603,10 +1603,10 @@
             // 概率 → 赔率 (15% 抽水)
             const odds = {};
             for (const [k, p] of Object.entries(probs)) {
-                const adjP = Math.max(p, 0.005);
-                odds[k] = parseFloat((0.85 / adjP).toFixed(2));
-                if (odds[k] < 1.15) odds[k] = 1.15; // 最低赔率
-                if (odds[k] > 35) odds[k] = Math.round(odds[k]); // 高赔率取整
+                const adjP = Math.max(p, 0.008);  // 最低概率 0.8% — 防止天文数字赔率
+                const rawOdds = 0.85 / adjP;
+                odds[k] = parseFloat(Math.min(rawOdds, 50.00).toFixed(2)); // 最高赔率封顶50
+                if (odds[k] < 1.12) odds[k] = 1.12; // 最低赔率
             }
 
             return odds;
