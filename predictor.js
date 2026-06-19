@@ -102,6 +102,8 @@ const TEAM_DATABASE = {
     '海地':     { att: 1.20, def: 0.95, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1490 },
     '委内瑞拉': { att: 1.30, def: 0.85, style: 'counter',   form: 1.5, setPiece: 0.30, phys: 7.5, depth: 6.5, fifa: 1578 },
     '玻利维亚': { att: 1.10, def: 1.10, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 6.5, depth: 5.5, fifa: 1415 },
+    '俄罗斯':   { att: 1.45, def: 0.85, style: 'balanced',  form: 1.5, setPiece: 0.30, phys: 7.5, depth: 7.0, fifa: 1585 },
+    '冰岛':     { att: 1.25, def: 0.78, style: 'defensive', form: 1.3, setPiece: 0.35, phys: 7.8, depth: 6.0, fifa: 1550 },
     '库拉索':   { att: 1.15, def: 0.98, style: 'defensive', form: 1.1, setPiece: 0.25, phys: 7.2, depth: 5.8, fifa: 1410 },
 
     // 大洋洲
