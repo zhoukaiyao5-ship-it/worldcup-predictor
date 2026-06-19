@@ -842,6 +842,35 @@
                     </label>
                 </div>
 
+                <!-- 竞彩赔率输入 -->
+                <div class="collapsible" id="lotterySection">
+                    <div class="collapsible-header" onclick="toggleCollapsible('lotterySection')">
+                        <span class="collapsible-title">🎲 竞彩赔率 (市场反推)</span>
+                        <span class="collapsible-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="collapsible-inner">
+                            <div class="form-group">
+                                <label>总进球赔率</label>
+                                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+                                    <div><small style="color:#8892b0">0球</small><input class="lottery-inp" id="lot0" placeholder="8.50" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">1球</small><input class="lottery-inp" id="lot1" placeholder="4.20" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">2球</small><input class="lottery-inp" id="lot2" placeholder="3.10" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">3球</small><input class="lottery-inp" id="lot3" placeholder="3.50" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">4球</small><input class="lottery-inp" id="lot4" placeholder="5.50" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">5球</small><input class="lottery-inp" id="lot5" placeholder="9.00" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">6球</small><input class="lottery-inp" id="lot6" placeholder="15.0" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                    <div><small style="color:#8892b0">7+球</small><input class="lottery-inp" id="lot7p" placeholder="22.0" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem"></div>
+                                </div>
+                            </div>
+                            <div class="row" style="margin-top:8px">
+                                <button class="btn-predict" style="padding:8px;font-size:0.85rem" onclick="fillDemoOdds()">📊 填充演示赔率</button>
+                                <button class="btn-predict" style="padding:8px;font-size:0.85rem;background:linear-gradient(90deg,#f59e0b,#ef4444)" onclick="clearLotteryOdds()">✕ 清除赔率</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn-predict" id="predictBtn">🔮 开始预测</button>
             </div>
 
@@ -885,6 +914,29 @@
                         <div class="stat-item">
                             <div class="stat-value" style="font-size:0.9rem; color:#8892b0" id="factorConsensus">--</div>
                             <div class="stat-label">因子共识</div>
+                        </div>
+                    </div>
+
+                    <!-- 竞彩赔率市场对比 -->
+                    <div class="scorelines fade-in" id="marketSection" style="display:none">
+                        <div class="scorelines-title">  竞彩赔率 vs 模型预测</div>
+                        <div class="info-edge-stats">
+                            <div class="info-edge-stat">
+                                <div class="info-edge-stat-value" id="marketPrediction" style="color:#fbbf24">--</div>
+                                <div class="info-edge-stat-label">市场方向</div>
+                            </div>
+                            <div class="info-edge-stat">
+                                <div class="info-edge-stat-value" id="marketExpected" style="color:#fbbf24">--</div>
+                                <div class="info-edge-stat-label">市场预期(球)</div>
+                            </div>
+                            <div class="info-edge-stat">
+                                <div class="info-edge-stat-value" id="marketConfidence" style="color:#fbbf24">--</div>
+                                <div class="info-edge-stat-label">市场置信度</div>
+                            </div>
+                            <div class="info-edge-stat">
+                                <div class="info-edge-stat-value" id="marketAgreement" style="color:#4ade80">--</div>
+                                <div class="info-edge-stat-label">模型vs市场</div>
+                            </div>
                         </div>
                     </div>
 
@@ -1175,13 +1227,23 @@
                         restDaysAway,
                     });
 
-                    if (useLiveData) {
-                        const liveData = generateMockLiveData(homeTeam, awayTeam, predictionCount);
-                        predictor.setLiveData(liveData);
+                    // 构建实时数据
+                    let liveData = null;
+                    const lotteryOdds = getLotteryOdds();
+
+                    if (lotteryOdds) {
+                        // 使用竞彩赔率反推
+                        const analyzer = new LotteryOddsAnalyzer({ totalGoals: lotteryOdds, handicapLine: handicap });
+                        liveData = analyzer.toLiveData(homeTeam, awayTeam);
+                        updateDataStatus(liveData);
+                    } else if (useLiveData) {
+                        liveData = generateMockLiveData(homeTeam, awayTeam, predictionCount);
                         updateDataStatus(liveData);
                     } else {
                         updateDataStatus(null);
                     }
+
+                    if (liveData) predictor.setLiveData(liveData);
 
                     const result = predictor.predict();
                     predictionCount++;
@@ -1208,11 +1270,21 @@
             const updateTime = document.getElementById('updateTime');
 
             if (liveData) {
-                dataSource.textContent = liveData.data_source === 'mock' ? '模拟数据' : '实时API';
+                if (liveData.data_source === 'lottery') {
+                    dataSource.textContent = '  竞彩赔率';
+                    dataSource.style.color = '#fbbf24';
+                } else if (liveData.data_source === 'mock') {
+                    dataSource.textContent = '模拟数据';
+                    dataSource.style.color = '';
+                } else {
+                    dataSource.textContent = '实时API';
+                    dataSource.style.color = '';
+                }
                 dataQuality.textContent = Math.round((liveData.data_quality || 0.5) * 100) + '%';
                 updateTime.textContent = new Date().toLocaleTimeString('zh-CN');
             } else {
-                dataSource.textContent = '纯模型 (无实时数据)';
+                dataSource.textContent = '纯模型';
+                dataSource.style.color = '';
                 dataQuality.textContent = '--';
                 updateTime.textContent = '--';
             }
@@ -1247,6 +1319,17 @@
             document.getElementById('overProbability').textContent = Math.round(data.overProbability * 100) + '%';
             document.getElementById('underProbability').textContent = Math.round(data.underProbability * 100) + '%';
             document.getElementById('factorConsensus').textContent = Math.round(data.factorConsensus * 100) + '%';
+
+            // 赔率市场对比
+            if (data.lotteryMarket) {
+                document.getElementById('marketPrediction').textContent = data.lotteryMarket.prediction;
+                document.getElementById('marketExpected').textContent = data.lotteryMarket.expectedGoals.toFixed(1);
+                document.getElementById('marketConfidence').textContent = Math.round(data.lotteryMarket.confidence * 100) + '%';
+                document.getElementById('marketAgreement').textContent = data.lotteryMarket.agreement;
+                document.getElementById('marketSection').style.display = 'block';
+            } else {
+                document.getElementById('marketSection').style.display = 'none';
+            }
 
             // 信息差
             document.getElementById('infoEdgeSummary').textContent = data.infoEdge.summary;
@@ -1352,6 +1435,39 @@
             } else {
                 liveDataDetail.innerHTML = '<div style="color: #8892b0; font-size: 0.85rem; text-align: center;">无实时数据信号输入</div>';
             }
+        }
+
+        // ===== 竞彩赔率功能 =====
+        function fillDemoOdds() {
+            // 模拟一场"进攻型"比赛赔率 (如法国vs阿根廷)
+            document.getElementById('lot0').value = '10.00';
+            document.getElementById('lot1').value = '5.50';
+            document.getElementById('lot2').value = '3.60';
+            document.getElementById('lot3').value = '3.80';
+            document.getElementById('lot4').value = '5.00';
+            document.getElementById('lot5').value = '7.50';
+            document.getElementById('lot6').value = '12.00';
+            document.getElementById('lot7p').value = '18.00';
+            document.getElementById('lotterySection').classList.add('open');
+        }
+
+        function clearLotteryOdds() {
+            document.querySelectorAll('.lottery-inp').forEach(el => el.value = '');
+        }
+
+        function getLotteryOdds() {
+            const fields = ['lot0','lot1','lot2','lot3','lot4','lot5','lot6','lot7p'];
+            const totalGoals = {};
+            const labels = ['0','1','2','3','4','5','6','7+'];
+            let hasData = false;
+            fields.forEach((id,i) => {
+                const val = parseFloat(document.getElementById(id).value);
+                if (!isNaN(val) && val > 1) {
+                    totalGoals[labels[i]] = val;
+                    hasData = true;
+                }
+            });
+            return hasData ? totalGoals : null;
         }
 
         function toggleAutoRefresh() {

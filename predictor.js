@@ -173,6 +173,7 @@ const CONFIG = {
             weather: 0.12,
             referee: 0.08,
             h2h: 0.15,
+            lottery: 0.60,     // 竞彩赔率 — 最高权重,真实市场数据
         },
         consistencyBoost: 1.25,
         consistencyPenalty: 0.75,
@@ -612,7 +613,15 @@ class WorldCupPredictor {
             addSignal('referee', auxiliaryImpact - 1.0, 0.4, `裁判风格: ${data.referee_style}`);
         }
 
-        // 7. 辅助信号: 历史交锋
+        // 7. 竞彩赔率信号 (最高权重 — 真实市场数据)
+        if (data.lottery_direction) {
+            const lotterySignal = (data.lottery_over_prob || 0.5) - (data.lottery_under_prob || 0.5);
+            const lotteryConf = data.lottery_confidence || 0.1;
+            addSignal('lottery', lotterySignal * 0.4, 0.90,
+                `竞彩市场: ${data.lottery_direction} (置信${(lotteryConf*100).toFixed(0)}%, 预期${(data.lottery_expected_goals||0).toFixed(1)}球)`);
+        }
+
+        // 8. 辅助信号: 历史交锋
         if (data.h2h_avg_goals && data.h2h_avg_goals > 0) {
             const diff = (data.h2h_avg_goals - 2.5) / 2.5 * 0.08;
             auxiliaryImpact *= (1.0 + diff);
@@ -857,6 +866,8 @@ class WorldCupPredictor {
                 summary: infoEdgeR.summary,
                 signalCount: infoEdgeR.signals.length,
             },
+            // 竞彩赔率市场对比 (有赔率数据时才输出)
+            lotteryMarket: this._buildLotteryMarket(isOver, clampedExpected),
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),
@@ -910,6 +921,34 @@ class WorldCupPredictor {
         }
 
         return reasons;
+    }
+
+    /** 构建赔率市场对比数据 */
+    _buildLotteryMarket(modelIsOver, modelExpected) {
+        if (!this.liveData || this.liveData.data_source !== 'lottery') return null;
+        if (this.liveData.lottery_direction === undefined) return null;
+
+        const marketIsOver = this.liveData.lottery_direction === '大球';
+        const marketExpected = this.liveData.lottery_expected_goals || 0;
+        const marketConfidence = this.liveData.lottery_confidence || 0;
+
+        // 模型vs市场一致性
+        let agreement;
+        if (modelIsOver === marketIsOver) {
+            agreement = marketConfidence > 0.15 ? '  强一致' : '  一致';
+        } else {
+            agreement = Math.abs(modelExpected - marketExpected) > 0.8 ? '  严重分歧' : '  分歧';
+        }
+
+        return {
+            prediction: marketIsOver ? '大球' : '小球',
+            expectedGoals: parseFloat(marketExpected.toFixed(2)),
+            confidence: parseFloat(marketConfidence.toFixed(3)),
+            agreement,
+            openness: this.liveData.lottery_openness || 0.5,
+            overProb: this.liveData.lottery_over_prob || 0,
+            underProb: this.liveData.lottery_under_prob || 0,
+        };
     }
 
     _generateInsights(expected, isOver, edge, consensus, infoEdge, fatigue) {
@@ -1063,6 +1102,298 @@ class WorldCupPredictor {
     }
 }
 
+// ============================================================
+// 竞彩赔率反推引擎 — LotteryOddsAnalyzer
+// 从中国体育彩票实时赔率反推隐含概率分布
+// ============================================================
+
+class LotteryOddsAnalyzer {
+
+    /**
+     * @param {Object} oddsData - 竞彩赔率数据
+     * @param {Object} oddsData.totalGoals - 总进球数赔率 { '0':8.50, '1':4.20, '2':3.10, '3':3.50, '4':5.50, '5':9.00, '6':15.0, '7+':22.0 }
+     * @param {Object} oddsData.correctScore - 比分赔率 (可选) { '1-0':6.50, '2-1':7.00, ... }
+     * @param {Object} oddsData.spf - 胜平负赔率 (可选) { home:2.10, draw:3.20, away:3.50 }
+     * @param {Object} oddsData.handicap - 让球胜平负赔率 (可选)
+     */
+    constructor(oddsData = {}) {
+        this.oddsData = oddsData;
+        this.handicap = oddsData.handicapLine || 2.5;
+    }
+
+    setOdds(oddsData) {
+        this.oddsData = oddsData;
+        if (oddsData.handicapLine) this.handicap = oddsData.handicapLine;
+        return this;
+    }
+
+    // ==================== 核心方法 ====================
+
+    /**
+     * 从总进球数赔率反推隐含概率分布
+     * 使用标准化方法去除庄家抽水(overround)
+     * @returns {Object} { distribution, overround, expectedGoals, overProb, underProb }
+     */
+    analyzeTotalGoals() {
+        const tg = this.oddsData.totalGoals;
+        if (!tg) return { error: '缺少总进球数赔率数据', distribution: null };
+
+        // Step 1: 赔率 → 原始概率
+        const entries = Object.entries(tg).map(([goals, odds]) => ({
+            goals: goals === '7+' ? 7 : parseInt(goals),
+            odds: parseFloat(odds),
+            rawProb: 1 / parseFloat(odds),
+        }));
+
+        // Step 2: 计算 overround (总概率 > 1 的部分为庄家利润)
+        const sumRaw = entries.reduce((s, e) => s + e.rawProb, 0);
+        const overround = sumRaw - 1.0;
+
+        // Step 3: 标准化 + 重归一化 (去除抽水)
+        // 方法: Basic normalization (分摊法)
+        const totalWeight = entries.reduce((s, e) => s + Math.sqrt(e.rawProb), 0);
+        entries.forEach(e => {
+            e.trueProb = e.rawProb / sumRaw; // 等比缩放
+            e.adjProb = Math.sqrt(e.rawProb) / totalWeight; // 平方根分摊
+        });
+
+        // 用 trueProb 作为最终概率 (等比缩放最常用)
+        const distribution = {};
+        entries.forEach(e => { distribution[e.goals] = parseFloat(e.trueProb.toFixed(4)); });
+
+        // Step 4: 计算预期进球
+        const expectedGoals = entries.reduce((s, e) => s + e.goals * e.trueProb, 0);
+
+        // Step 5: 大小球概率
+        const overProb = entries.filter(e => e.goals > this.handicap).reduce((s, e) => s + e.trueProb, 0);
+        const underProb = entries.filter(e => e.goals < this.handicap).reduce((s, e) => s + e.trueProb, 0);
+        const pushProb = 1 - overProb - underProb;
+
+        return {
+            distribution,
+            overround: parseFloat(overround.toFixed(4)),
+            overroundPercent: parseFloat((overround * 100).toFixed(1)),
+            expectedGoals: parseFloat(expectedGoals.toFixed(2)),
+            overProb: parseFloat(overProb.toFixed(4)),
+            underProb: parseFloat(underProb.toFixed(4)),
+            pushProb: parseFloat(pushProb.toFixed(4)),
+            marketPrediction: overProb > underProb ? '大球' : '小球',
+            marketConfidence: parseFloat(Math.abs(overProb - underProb).toFixed(3)),
+        };
+    }
+
+    /**
+     * 从比分赔率反推比分分布
+     * 竞彩通常提供 31 种比分选项
+     */
+    analyzeCorrectScore() {
+        const cs = this.oddsData.correctScore;
+        if (!cs) return { error: '缺少比分赔率数据', distribution: null };
+
+        const entries = Object.entries(cs).map(([score, odds]) => {
+            const [h, a] = score.split('-').map(Number);
+            return {
+                score,
+                home: h,
+                away: a,
+                total: h + a,
+                odds: parseFloat(odds),
+                rawProb: 1 / parseFloat(odds),
+            };
+        });
+
+        const sumRaw = entries.reduce((s, e) => s + e.rawProb, 0);
+        const overround = sumRaw - 1.0;
+
+        // Normalize
+        entries.forEach(e => { e.prob = e.rawProb / sumRaw; });
+
+        // 按概率排序
+        entries.sort((a, b) => b.prob - a.prob);
+
+        // 计算总球数分布 (从比分聚合)
+        const totalDist = {};
+        entries.forEach(e => {
+            totalDist[e.total] = (totalDist[e.total] || 0) + e.prob;
+        });
+
+        // 大小球
+        const overProb = entries.filter(e => e.total > this.handicap).reduce((s, e) => s + e.prob, 0);
+        const underProb = entries.filter(e => e.total < this.handicap).reduce((s, e) => s + e.prob, 0);
+
+        // 预期进球
+        const expectedGoals = entries.reduce((s, e) => s + e.total * e.prob, 0);
+
+        return {
+            topScorelines: entries.slice(0, 8).map(e => ({
+                score: e.score,
+                odds: e.odds,
+                probability: parseFloat(e.prob.toFixed(4)),
+            })),
+            totalDistribution: totalDist,
+            overround: parseFloat(overround.toFixed(4)),
+            expectedGoals: parseFloat(expectedGoals.toFixed(2)),
+            overProb: parseFloat(overProb.toFixed(4)),
+            underProb: parseFloat(underProb.toFixed(4)),
+            scoreCount: entries.length,
+        };
+    }
+
+    /**
+     * 从胜平负赔率反推隐含胜率
+     * 可辅助判断比赛开放程度
+     */
+    analyzeSPF() {
+        const spf = this.oddsData.spf;
+        if (!spf) return null;
+
+        const homeRaw = 1 / (spf.home || 2.0);
+        const drawRaw = 1 / (spf.draw || 3.0);
+        const awayRaw = 1 / (spf.away || 3.0);
+        const sum = homeRaw + drawRaw + awayRaw;
+
+        const homeProb = homeRaw / sum;
+        const drawProb = drawRaw / sum;
+        const awayProb = awayRaw / sum;
+        const overround = sum - 1;
+
+        // 判断比赛开放度: 平局概率低 = 更可能分出胜负 = 更开放
+        const openness = 1 - drawProb;
+
+        return {
+            homeProb: parseFloat(homeProb.toFixed(4)),
+            drawProb: parseFloat(drawProb.toFixed(4)),
+            awayProb: parseFloat(awayProb.toFixed(4)),
+            openness: parseFloat(openness.toFixed(3)),
+            favoriteStrength: parseFloat(Math.abs(homeProb - awayProb).toFixed(3)),
+            overround: parseFloat(overround.toFixed(4)),
+        };
+    }
+
+    /**
+     * 综合赔率分析 — 融合所有数据源
+     * @returns 标准化的"市场共识"信号，可直接送入 InfoEdge
+     */
+    comprehensiveAnalysis() {
+        const tgResult = this.analyzeTotalGoals();
+        const csResult = this.analyzeCorrectScore();
+        const spfResult = this.analyzeSPF();
+
+        // 融合总进球和比分分析
+        let overProb = null;
+        let underProb = null;
+        let expectedGoals = null;
+        let sources = [];
+
+        if (!tgResult.error) {
+            overProb = tgResult.overProb;
+            underProb = tgResult.underProb;
+            expectedGoals = tgResult.expectedGoals;
+            sources.push('totalGoals');
+        }
+
+        if (!csResult.error && csResult.scoreCount > 0) {
+            // 比分数据通常更精确，权重更高
+            if (overProb !== null) {
+                overProb = overProb * 0.4 + csResult.overProb * 0.6;
+                underProb = underProb * 0.4 + csResult.underProb * 0.6;
+            } else {
+                overProb = csResult.overProb;
+                underProb = csResult.underProb;
+            }
+            if (expectedGoals !== null) {
+                expectedGoals = expectedGoals * 0.4 + csResult.expectedGoals * 0.6;
+            } else {
+                expectedGoals = csResult.expectedGoals;
+            }
+            sources.push('correctScore');
+        }
+
+        if (sources.length === 0) {
+            return { error: '无可用赔率数据', marketConsensus: null };
+        }
+
+        // 市场共识方向
+        const marketDirection = overProb > underProb ? '大球' : '小球';
+        // 市场置信度 = 大小球概率差的绝对值
+        const marketConfidence = Math.abs(overProb - underProb);
+
+        // 转换为 InfoEdge 兼容的信号格式
+        // positive value = 倾向大球, negative = 倾向小球
+        const marketSignal = (overProb - underProb) * 0.5; // 缩放到 [-0.25, 0.25] 范围
+
+        // 开盘隐含的盘口"合理值" — 如果市场预期 2.8 球而我们预测 2.3，存在偏差
+        const marketImpliedLine = expectedGoals;
+
+        // SPF 开放度作为辅助
+        let openness = 0.5;
+        let favoriteStrength = 0;
+        if (spfResult) {
+            openness = spfResult.openness;
+            favoriteStrength = spfResult.favoriteStrength;
+        }
+
+        return {
+            success: true,
+            sources,
+            marketDirection,
+            marketConfidence: parseFloat(marketConfidence.toFixed(4)),
+            marketSignal: parseFloat(marketSignal.toFixed(4)),
+            marketExpectedGoals: parseFloat(expectedGoals.toFixed(2)),
+            marketOverProb: parseFloat(overProb.toFixed(4)),
+            marketUnderProb: parseFloat(underProb.toFixed(4)),
+            openness: parseFloat(openness.toFixed(3)),
+            favoriteStrength: parseFloat(favoriteStrength.toFixed(3)),
+            // 子结果
+            totalGoalsAnalysis: tgResult,
+            correctScoreAnalysis: csResult,
+            spfAnalysis: spfResult,
+        };
+    }
+
+    /**
+     * 生成 InfoEdge 实时数据格式
+     * 可直接传入 predictor.setLiveData()
+     */
+    toLiveData(homeTeam, awayTeam) {
+        const analysis = this.comprehensiveAnalysis();
+        if (analysis.error) return null;
+
+        return {
+            data_source: 'lottery',
+            data_quality: 0.95, // 真实赔率数据质量极高
+            hours_to_match: 2,
+
+            // 赔率衍生信号
+            lottery_over_prob: analysis.marketOverProb,
+            lottery_under_prob: analysis.marketUnderProb,
+            lottery_expected_goals: analysis.marketExpectedGoals,
+            lottery_direction: analysis.marketDirection,
+            lottery_confidence: analysis.marketConfidence,
+            lottery_openness: analysis.openness,
+            lottery_favorite_strength: analysis.favoriteStrength,
+
+            // 总进球分布
+            total_goals_distribution: analysis.totalGoalsAnalysis.distribution || null,
+            overround: analysis.totalGoalsAnalysis.overround || null,
+            overround_percent: analysis.totalGoalsAnalysis.overroundPercent || null,
+
+            // 比分分布 Top5
+            scoreline_distribution: analysis.correctScoreAnalysis.topScorelines || null,
+
+            // 原始赔率携带
+            raw_total_goals_odds: this.oddsData.totalGoals || null,
+            raw_correct_score_odds: this.oddsData.correctScore || null,
+
+            // 兼容旧 InfoEdge 字段
+            odds_change_15min: analysis.marketSignal,
+            odds_change_1h: analysis.marketSignal * 0.5,
+            over_odds: this.oddsData.totalGoals ? 1.85 : null,
+            under_odds: this.oddsData.totalGoals ? 1.90 : null,
+        };
+    }
+}
+
 // ==================== 深层合并工具 ====================
 function deepMerge(target, ...sources) {
     for (const src of sources) {
@@ -1172,8 +1503,13 @@ function getTeamList() {
 // ==================== 导出 ====================
 if (typeof window !== 'undefined') {
     window.WorldCupPredictor = WorldCupPredictor;
+    window.LotteryOddsAnalyzer = LotteryOddsAnalyzer;
     window.generateMockLiveData = generateMockLiveData;
     window.getTeamList = getTeamList;
     window.TEAM_DATABASE = TEAM_DATABASE;
     window.CONFIG = CONFIG;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { WorldCupPredictor, LotteryOddsAnalyzer, generateMockLiveData, getTeamList, TEAM_DATABASE, CONFIG };
 }
