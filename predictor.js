@@ -1025,7 +1025,7 @@ class WorldCupPredictor {
 
         return {
             success: true,
-            modelVersion: '2.0',
+            modelVersion: '3.0',
             prediction: isOver ? '大球' : '小球',
             isOver: isOver,
             strength,
@@ -1301,7 +1301,7 @@ class WorldCupPredictor {
         const avgLogLoss = total > 0 ? sumLogLoss / total : 0;
 
         return {
-            modelVersion: '2.0',
+            modelVersion: '3.0',
             totalMatches: total,
             correct: correct,
             accuracy: parseFloat(accuracy.toFixed(4)),
