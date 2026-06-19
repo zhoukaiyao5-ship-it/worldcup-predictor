@@ -32,6 +32,7 @@ const TEAM_DATABASE = {
     '瑞士':     { att: 1.65, def: 0.75, style: 'balanced',  form: 1.6, setPiece: 0.30, phys: 7.8, depth: 7.2, fifa: 1700 },
     '丹麦':     { att: 1.70, def: 0.72, style: 'balanced',  form: 1.7, setPiece: 0.32, phys: 7.8, depth: 7.0, fifa: 1695 },
     '塞尔维亚': { att: 1.85, def: 1.00, style: 'attack',    form: 1.8, setPiece: 0.35, phys: 7.5, depth: 7.0, fifa: 1680 },
+    '波黑':     { att: 1.40, def: 0.92, style: 'balanced',  form: 1.3, setPiece: 0.33, phys: 7.5, depth: 6.5, fifa: 1630 },
     '波兰':     { att: 1.60, def: 0.95, style: 'counter',   form: 1.5, setPiece: 0.38, phys: 7.5, depth: 6.8, fifa: 1665 },
     '奥地利':   { att: 1.75, def: 0.85, style: 'attack',    form: 1.9, setPiece: 0.28, phys: 8.0, depth: 7.2, fifa: 1660 },
     '乌克兰':   { att: 1.55, def: 0.82, style: 'counter',   form: 1.5, setPiece: 0.30, phys: 7.5, depth: 6.8, fifa: 1650 },
@@ -57,6 +58,9 @@ const TEAM_DATABASE = {
     '喀麦隆':   { att: 1.40, def: 0.88, style: 'balanced',  form: 1.4, setPiece: 0.32, phys: 8.0, depth: 6.8, fifa: 1610 },
     '突尼斯':   { att: 1.25, def: 0.80, style: 'defensive', form: 1.3, setPiece: 0.28, phys: 7.5, depth: 6.5, fifa: 1605 },
     '科特迪瓦': { att: 1.55, def: 0.85, style: 'attack',    form: 1.6, setPiece: 0.30, phys: 8.0, depth: 7.0, fifa: 1600 },
+    '南非':     { att: 1.30, def: 0.82, style: 'balanced',  form: 1.4, setPiece: 0.30, phys: 7.5, depth: 6.8, fifa: 1585 },
+    '佛得角':   { att: 1.25, def: 0.85, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.8, depth: 6.2, fifa: 1550 },
+    '民主刚果': { att: 1.35, def: 0.88, style: 'balanced',  form: 1.3, setPiece: 0.30, phys: 7.8, depth: 6.5, fifa: 1570 },
     '尼日利亚': { att: 1.50, def: 0.88, style: 'attack',    form: 1.5, setPiece: 0.30, phys: 8.0, depth: 7.2, fifa: 1598 },
     '阿尔及利亚':{ att: 1.40, def: 0.85, style: 'balanced', form: 1.4, setPiece: 0.28, phys: 7.5, depth: 6.8, fifa: 1590 },
     '埃及':     { att: 1.35, def: 0.82, style: 'counter',   form: 1.4, setPiece: 0.33, phys: 7.5, depth: 6.8, fifa: 1585 },
@@ -70,6 +74,8 @@ const TEAM_DATABASE = {
     '卡塔尔':   { att: 1.35, def: 0.95, style: 'balanced',  form: 1.3, setPiece: 0.28, phys: 7.5, depth: 6.5, fifa: 1560 },
     '阿联酋':   { att: 1.25, def: 0.95, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.2, fifa: 1540 },
     '伊拉克':   { att: 1.25, def: 0.88, style: 'defensive', form: 1.3, setPiece: 0.30, phys: 7.5, depth: 6.2, fifa: 1535 },
+    '约旦':     { att: 1.20, def: 0.88, style: 'counter',   form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1520 },
+    '乌兹别克': { att: 1.30, def: 0.85, style: 'balanced',  form: 1.4, setPiece: 0.28, phys: 7.5, depth: 6.2, fifa: 1530 },
 
     // 中北美
     '墨西哥':   { att: 1.55, def: 0.82, style: 'counter',   form: 1.6, setPiece: 0.32, phys: 8.0, depth: 7.2, fifa: 1655 },
@@ -78,6 +84,8 @@ const TEAM_DATABASE = {
     '哥斯达黎加':{ att: 1.25, def: 0.78, style: 'defensive',form: 1.2, setPiece: 0.30, phys: 7.2, depth: 6.2, fifa: 1565 },
     '巴拿马':   { att: 1.15, def: 0.95, style: 'defensive', form: 1.1, setPiece: 0.28, phys: 7.0, depth: 6.0, fifa: 1520 },
     '牙买加':   { att: 1.30, def: 0.92, style: 'counter',   form: 1.3, setPiece: 0.28, phys: 7.8, depth: 6.2, fifa: 1510 },
+    '海地':     { att: 1.20, def: 0.95, style: 'defensive', form: 1.2, setPiece: 0.28, phys: 7.5, depth: 6.0, fifa: 1490 },
+    '库拉索':   { att: 1.15, def: 0.98, style: 'defensive', form: 1.1, setPiece: 0.25, phys: 7.2, depth: 5.8, fifa: 1410 },
 
     // 大洋洲
     '新西兰':   { att: 1.20, def: 0.95, style: 'balanced',  form: 1.2, setPiece: 0.30, phys: 7.8, depth: 6.0, fifa: 1500 },
