@@ -913,9 +913,9 @@
                         </div>
                     </div>
 
-                    <!-- 竞彩赔率资金流向分析 (反向指标) -->
+                    <!-- 竞彩赔率辅助校验 -->
                     <div class="scorelines fade-in" id="marketSection" style="display:none">
-                        <div class="scorelines-title">  竞彩赔率 · 资金流向分析</div>
+                        <div class="scorelines-title">  竞彩赔率 · 辅助校验</div>
                         <div class="info-edge-stats">
                             <div class="info-edge-stat">
                                 <div class="info-edge-stat-value" id="mktCapitalDir" style="color:#f59e0b">--</div>
@@ -1320,18 +1320,18 @@
             document.getElementById('underProbability').textContent = Math.round(data.underProbability * 100) + '%';
             document.getElementById('factorConsensus').textContent = Math.round(data.factorConsensus * 100) + '%';
 
-            // 赔率资金流向分析 (反向指标)
+            // 赔率辅助校验
             if (data.marketAnalysis) {
                 const ma = data.marketAnalysis;
                 document.getElementById('mktCapitalDir').textContent = ma.capitalDirection;
-                document.getElementById('mktCapitalDir').style.color = ma.capitalDirection === '大球' ? '#ef4444' : '#3b82f6';
+                document.getElementById('mktCapitalDir').style.color = ma.capitalDirection === '大球' ? '#f59e0b' : '#60a5fa';
                 document.getElementById('mktPublicBias').textContent = ma.publicBias;
                 document.getElementById('mktModelDir').textContent = ma.modelDirection + ' ' + ma.modelExpected + '球';
-                document.getElementById('mktValueDir').textContent = ma.isContrarian ? ma.valueDirection : '— 无偏向 —';
-                document.getElementById('mktValueDir').style.color = ma.isContrarian ? '#a78bfa' : '#6b7280';
+                document.getElementById('mktValueDir').textContent = ma.isContrarian ? ma.valueDirection : '方向一致';
+                document.getElementById('mktValueDir').style.color = ma.isContrarian ? '#a78bfa' : '#4ade80';
                 document.getElementById('mktNote').textContent = ma.isContrarian
-                    ? '⚠️ 大众资金与模型严重偏离, 关注' + ma.valueDirection + '方向'
-                    : '资金均衡分布, 无明显反向机会';
+                    ? '模型与赔率有差异, 已做±2%微调'
+                    : '模型为主, 赔率辅助校验 ±2%';
                 document.getElementById('marketSection').style.display = 'block';
             } else {
                 document.getElementById('marketSection').style.display = 'none';

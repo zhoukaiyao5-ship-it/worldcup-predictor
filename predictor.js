@@ -771,39 +771,52 @@ class WorldCupPredictor {
         }
 
         // ============================================================
-        // 反向指标: 竞彩赔率 = 资金流向, 非概率预测
-        // 庄家用赔率调节两边投注量, 依靠抽水+大数定律盈利
-        // 当大众资金与模型基本面严重偏离时 → 可能存在价值方向
+        // 赔率辅助校验: 基本面为主, 赔率为辅 (±4%微调)
+        // 庄家赔率内化了大量信息, 但不等于预测 — 适度参考而非盲从
         // ============================================================
         let marketAnalysis = null;
         if (this.liveData && this.liveData.data_source === 'lottery'
             && typeof this.liveData.lottery_expected_goals === 'number'
             && this.liveData.lottery_expected_goals > 0) {
 
-            marketAnalysis = {
-                // 资金偏向量 (来自赔率 — 低赔率=大量资金涌入)
-                capitalOverProb: this.liveData.lottery_over_prob || 0.5,
-                capitalUnderProb: this.liveData.lottery_under_prob || 0.5,
-                capitalDirection: (this.liveData.lottery_over_prob || 0) > (this.liveData.lottery_under_prob || 0) ? '大球' : '小球',
-                capitalExpected: this.liveData.lottery_expected_goals,
-            };
+            const capitalOver = this.liveData.lottery_over_prob || 0.5;
+            const capitalUnder = this.liveData.lottery_under_prob || 0.5;
+            const capitalDir = capitalOver > capitalUnder ? '大球' : '小球';
+            const capitalExpected = this.liveData.lottery_expected_goals;
 
             // 模型方向
-            const modelDirection = clampedExpected > this.handicap ? '大球' : '小球';
-            const modelOverProb = clampedExpected > this.handicap ? 0.5 + Math.min((clampedExpected - this.handicap) / this.handicap * 0.3, 0.35) : 0.5 - Math.min((this.handicap - clampedExpected) / this.handicap * 0.3, 0.35);
+            const modelDir = clampedExpected > this.handicap ? '大球' : '小球';
 
             // 资金vs模型偏离度
-            marketAnalysis.capitalBias = (marketAnalysis.capitalOverProb - 0.5) * 2; // [-1, +1], + = 大球热
-            marketAnalysis.modelLean = (modelOverProb - 0.5) * 2;                    // [-1, +1], + = 大球倾向
-            marketAnalysis.discrepancy = marketAnalysis.modelLean - marketAnalysis.capitalBias;
-            // > 0: 模型倾向大球但资金追逐小球 → 大球可能被低估
-            // < 0: 资金疯狂追逐大球但模型不看好 → 小球可能被低估
+            const capitalBias = (capitalOver - 0.5) * 2;
+            const modelLean = clampedExpected > this.handicap
+                ? Math.min((clampedExpected - this.handicap) / this.handicap, 0.7)
+                : -Math.min((this.handicap - clampedExpected) / this.handicap, 0.7);
+            const discrepancy = modelLean - capitalBias;
 
-            // 价值方向: 与大众资金反方向, 前提是模型有足够信心
-            const absDisc = Math.abs(marketAnalysis.discrepancy);
-            marketAnalysis.isContrarian = absDisc > 0.25; // 偏离>25%才有反向价值
-            marketAnalysis.valueDirection = marketAnalysis.discrepancy > 0 ? '大球(被低估)' : '小球(被低估)';
-            marketAnalysis.publicBias = marketAnalysis.capitalBias > 0.1 ? '追大球过热' : marketAnalysis.capitalBias < -0.1 ? '追小球过热' : '资金均衡';
+            // 赔率辅助微调: 方向一致时增强信心, 分歧大时略微回归
+            // 最大影响 ±4%, 远小于之前的 ±45%
+            const marketAdjustment = clamp(capitalBias * 0.04, -0.04, 0.04);
+            if (modelDir === capitalDir) {
+                // 模型与赔率方向一致 → 温和增强
+                clampedExpected *= (1.0 + Math.abs(marketAdjustment) * 0.5);
+            } else if (Math.abs(discrepancy) > 0.4) {
+                // 严重分歧 → 略微向赔率方向靠拢 (赔率可能有额外信息)
+                clampedExpected = clampedExpected * (1.0 + marketAdjustment * 0.33);
+            }
+            clampedExpected = clamp(clampedExpected, 0.3, 7.0);
+
+            // 构建分析数据
+            marketAnalysis = {
+                capitalDirection: capitalDir,
+                capitalExpected: capitalExpected,
+                capitalBias: capitalBias,
+                publicBias: capitalBias > 0.15 ? '追大球偏热' : capitalBias < -0.15 ? '追小球偏热' : '资金均衡',
+                modelDirection: modelDir,
+                isContrarian: Math.abs(discrepancy) > 0.30,
+                valueDirection: discrepancy > 0 ? '大球(被低估)' : '小球(被低估)',
+                discrepancy: discrepancy,
+            };
         }
 
         // --- 最终判断大小球 (可能已被贝叶斯先验调整) ---
@@ -961,18 +974,20 @@ class WorldCupPredictor {
         return reasons;
     }
 
-    /** 构建赔率资金流向分析 */
+    /** 构建赔率辅助分析 */
     _buildMarketAnalysis(modelIsOver, modelExpected, maRef) {
         if (!maRef) return null;
         return {
-            capitalDirection: maRef.capitalDirection,      // 资金追逐方向
-            capitalExpected: maRef.capitalExpected.toFixed(2),
-            publicBias: maRef.publicBias,                  // 大众偏向描述
+            capitalDirection: maRef.capitalDirection,
+            capitalExpected: typeof maRef.capitalExpected === 'number'
+                ? maRef.capitalExpected.toFixed(2) : maRef.capitalExpected,
+            publicBias: maRef.publicBias,
             modelDirection: modelIsOver ? '大球' : '小球',
             modelExpected: modelExpected.toFixed(2),
-            isContrarian: maRef.isContrarian,              // 是否存在反向机会
-            valueDirection: maRef.valueDirection,          // 价值方向
-            discrepancy: maRef.discrepancy.toFixed(3),     // 偏离度 (-1~+1)
+            isContrarian: maRef.isContrarian,
+            valueDirection: maRef.valueDirection || '—',
+            discrepancy: typeof maRef.discrepancy === 'number'
+                ? maRef.discrepancy.toFixed(3) : '0',
         };
     }
 
