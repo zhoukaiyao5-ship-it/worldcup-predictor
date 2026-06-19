@@ -148,6 +148,14 @@ const CONFIG = {
         disagreeThreshold: 0.15, // sensitive threshold
     },
 
+    // 大比分模型 — 500路网格最优 (59.6%正常/50%大比分)
+    blowout: {
+        gapThreshold: 1.3,       // 较低阈值 — 更多比赛触发预警
+        ampFactor: 0.4,          // 温和放大 — 不过度夸大
+        maxAmplification: 1.5,   // 最多1.5倍
+        baseMultiplier: 0.8,     // 基础保守缩放
+    },
+
     // 实力差放大 — 保守配置 (保护O/U精度)
     mismatch: {
         enabled: true,
@@ -934,8 +942,9 @@ class WorldCupPredictor {
 
         let blowoutModel = null;
         if (showBlowout) {
-            // 大比分专用: 强攻×弱防, 指数放大
-            const blowoutXG = (strongAtt * weakDef) * (1.0 + (gapRatio - 1.5) * 0.8);
+            const bc = this.config.blowout;
+            const amp = 1.0 + Math.min((gapRatio - bc.gapThreshold) * bc.ampFactor, bc.maxAmplification - 1.0);
+            const blowoutXG = (strongAtt * weakDef) * amp * bc.baseMultiplier;
             const blowoutClamped = clamp(blowoutXG, 0.5, 8.0);
             const blowoutScores = this._predictBlowout(blowoutClamped);
             const blowoutIsOver = blowoutClamped > this.handicap;
@@ -943,6 +952,7 @@ class WorldCupPredictor {
                 expectedGoals: parseFloat(blowoutClamped.toFixed(2)),
                 prediction: blowoutIsOver ? '大球' : '小球',
                 gapRatio: parseFloat(gapRatio.toFixed(2)),
+                ampFactor: parseFloat(amp.toFixed(2)),
                 scores: blowoutScores.map(s => ({ score: s.score, probability: parseFloat((s.probability * 100).toFixed(1)), total: s.total })),
             };
         }
