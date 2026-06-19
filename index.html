@@ -982,67 +982,6 @@
                     </div>
 
                     <!-- 各因子影响 -->
-                    <div class="collapsible" id="factorsSection">
-                        <div class="collapsible-header" onclick="toggleCollapsible('factorsSection')">
-                            <span class="collapsible-title">📈 各因子影响</span>
-                            <span class="collapsible-icon">▼</span>
-                        </div>
-                        <div class="collapsible-content">
-                            <div class="collapsible-inner">
-                                <div class="factor-list" id="factorList">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 动态权重调整 -->
-                    <div class="collapsible" id="weightsSection">
-                        <div class="collapsible-header" onclick="toggleCollapsible('weightsSection')">
-                            <span class="collapsible-title">⚖️ 动态权重调整</span>
-                            <span class="collapsible-icon">▼</span>
-                        </div>
-                        <div class="collapsible-content">
-                            <div class="collapsible-inner">
-                                <div class="weight-list" id="weightList">
-                                    <div style="color: #8892b0; font-size: 0.85rem; text-align: center;">
-                                        启用实时数据后显示动态权重调整
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 实时数据详情 -->
-                    <div class="collapsible" id="liveDataSection">
-                        <div class="collapsible-header" onclick="toggleCollapsible('liveDataSection')">
-                            <span class="collapsible-title">📡 实时数据详情</span>
-                            <span class="collapsible-icon">▼</span>
-                        </div>
-                        <div class="collapsible-content">
-                            <div class="collapsible-inner">
-                                <div id="liveDataDetail">
-                                    <div style="color: #8892b0; font-size: 0.85rem; text-align: center;">
-                                        启用实时数据后显示详情
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 疲劳因子分析 -->
-                    <div class="collapsible" id="fatigueSection">
-                        <div class="collapsible-header" onclick="toggleCollapsible('fatigueSection')">
-                            <span class="collapsible-title">🏃 疲劳因子分析</span>
-                            <span class="collapsible-icon">▼</span>
-                        </div>
-                        <div class="collapsible-content">
-                            <div class="collapsible-inner">
-                                <div class="factor-list" id="fatigueDetail">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- 关键洞察 -->
                     <div class="collapsible open" id="insightsSection">
                         <div class="collapsible-header" onclick="toggleCollapsible('insightsSection')">
@@ -1369,67 +1308,6 @@
             document.getElementById('playerImpact').textContent = Math.round(data.infoEdge.playerImpact * 100) + '%';
             document.getElementById('signalConsistency').textContent = Math.round(data.infoEdge.consistency * 100) + '%';
 
-            // 各因子影响 (新版: multiplier格式)
-            const factorList = document.getElementById('factorList');
-            factorList.innerHTML = '';
-            for (const [name, detail] of Object.entries(data.factorsDetail)) {
-                const mult = parseFloat(detail.multiplier);
-                const deviation = ((mult - 1) * 100);
-                const impactClass = deviation >= 0 ? 'positive' : 'negative';
-                const impactSign = deviation >= 0 ? '+' : '';
-                const item = document.createElement('div');
-                item.className = 'factor-item';
-                item.innerHTML = `
-                    <span class="factor-name">${name}</span>
-                    <span class="factor-impact ${impactClass}">${impactSign}${deviation.toFixed(1)}% (×${mult.toFixed(3)})</span>
-                `;
-                factorList.appendChild(item);
-            }
-
-            // 权重调整 → 因子共识信息
-            const weightList = document.getElementById('weightList');
-            weightList.innerHTML = `
-                <div class="factor-item">
-                    <span class="factor-name">因子共识度</span>
-                    <span class="factor-impact ${data.factorConsensus > 0.6 ? 'positive' : 'negative'}">
-                        ${Math.round(data.factorConsensus * 100)}%
-                    </span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">数据质量指数</span>
-                    <span class="factor-impact">${Math.round(data.dataQuality * 100)}%</span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">模型版本</span>
-                    <span class="factor-impact" style="color:#c084fc">v${data.modelVersion}</span>
-                </div>
-            `;
-
-            // 疲劳因子
-            const fatigueDetail = document.getElementById('fatigueDetail');
-            fatigueDetail.innerHTML = `
-                <div class="factor-item">
-                    <span class="factor-name">综合疲劳指数</span>
-                    <span class="factor-impact">${data.fatigue.index.toFixed(2)}</span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">对进球影响</span>
-                    <span class="factor-impact negative">${(data.fatigue.percent).toFixed(1)}%</span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">下半场进球占比</span>
-                    <span class="factor-impact">${data.fatigue.secondHalfRatio.toFixed(0)}%</span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">主队休息天数</span>
-                    <span class="factor-impact">${data.fatigue.restDays.home}天</span>
-                </div>
-                <div class="factor-item">
-                    <span class="factor-name">客队休息天数</span>
-                    <span class="factor-impact">${data.fatigue.restDays.away}天</span>
-                </div>
-            `;
-
             // 关键洞察
             const insightsList = document.getElementById('insightsList');
             insightsList.innerHTML = '';
@@ -1439,34 +1317,6 @@
                 item.textContent = insight;
                 insightsList.appendChild(item);
             });
-
-            // 实时数据详情
-            const liveDataDetail = document.getElementById('liveDataDetail');
-            if (data.infoEdge.signalCount > 0) {
-                liveDataDetail.innerHTML = `
-                    <div class="info-edge-summary">${data.infoEdge.summary}</div>
-                    <div class="factor-list">
-                        <div class="factor-item">
-                            <span class="factor-name">信号总数</span>
-                            <span class="factor-impact positive">${data.infoEdge.signalCount} 个</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">信号一致性</span>
-                            <span class="factor-impact">${Math.round(data.infoEdge.consistency * 100)}%</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">球员状态影响</span>
-                            <span class="factor-impact">${Math.round(data.infoEdge.playerImpact * 100)}%</span>
-                        </div>
-                        <div class="factor-item">
-                            <span class="factor-name">辅助信号影响</span>
-                            <span class="factor-impact">${Math.round(data.infoEdge.auxiliaryImpact * 100)}%</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                liveDataDetail.innerHTML = '<div style="color: #8892b0; font-size: 0.85rem; text-align: center;">无实时数据信号输入</div>';
-            }
         }
 
         // ===== 竞彩赔率功能 =====
