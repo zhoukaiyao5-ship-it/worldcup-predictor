@@ -1072,7 +1072,8 @@
             document.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter' && !activeDropdown) doPrediction();
             });
-            setTimeout(doPrediction, 500);
+            startOddsAutoRefresh();
+            setTimeout(() => { autoFillOdds(); doPrediction(); }, 500);
         });
 
         // ===== 可搜索下拉组件 =====
@@ -1144,6 +1145,8 @@
                 si.value = team;
                 renderDropdown();
                 closeDropdown(ssEl);
+                // 自动触发赔率匹配
+                setTimeout(autoFillOdds, 100);
             }
 
             // 事件绑定
@@ -1440,8 +1443,216 @@
         }
 
         // ===== 竞彩赔率功能 =====
+        let cachedOddsData = null;       // 缓存的实时赔率数据
+        let oddsFetchTimer = null;       // 定时刷新定时器
+        let lastOddsFetch = 0;           // 上次抓取时间
+
+        /**
+         * 核心: 根据选中的主客队自动匹配并填充赔率
+         */
+        function autoFillOdds() {
+            const homeTeam = getSelectedTeam('homeTeam');
+            const awayTeam = getSelectedTeam('awayTeam');
+            if (!homeTeam || !awayTeam) return;
+
+            // 先尝试从已缓存的实时数据匹配
+            if (cachedOddsData && tryMatchCachedOdds(homeTeam, awayTeam)) {
+                updateOddsStatus('✓ 实时赔率已匹配', '#4ade80');
+                return;
+            }
+
+            // 没有缓存 → 抓取实时数据
+            fetchRealTimeOdds(homeTeam, awayTeam);
+        }
+
+        /** 从缓存数据匹配 */
+        function tryMatchCachedOdds(homeTeam, awayTeam) {
+            if (!cachedOddsData || !Array.isArray(cachedOddsData)) return false;
+            const match = cachedOddsData.find(m =>
+                (m.home && m.home.includes(homeTeam) || homeTeam.includes(m.home))
+                && (m.away && m.away.includes(awayTeam) || awayTeam.includes(m.away))
+            );
+            if (!match) {
+                // 模糊匹配: 任一方匹配
+                const fuzzy = cachedOddsData.find(m =>
+                    m.home && (m.home.includes(homeTeam) || homeTeam.includes(m.home))
+                );
+                if (!fuzzy) return false;
+            }
+            const m = match || cachedOddsData.find(m =>
+                m.home && m.home.includes(homeTeam));
+            if (m && m.totalGoals) {
+                fillOddsFields(m.totalGoals);
+                return true;
+            }
+            return false;
+        }
+
+        /** 多源抓取实时赔率 */
+        async function fetchRealTimeOdds(homeTeam, awayTeam) {
+            updateOddsStatus('⏳ 正在获取实时赔率...', '#fbbf24');
+            const now = Date.now();
+
+            // 防抖: 5秒内不重复抓取
+            if (now - lastOddsFetch < 5000) return;
+            lastOddsFetch = now;
+
+            let data = null;
+
+            // 源1: 竞彩官网 JSONP
+            data = await tryJSONPFetch(homeTeam, awayTeam);
+            if (data) { cachedOddsData = data; updateOddsStatus('✓ 竞彩官网', '#4ade80'); return; }
+
+            // 源2: 基于球队统计智能生成 (非模型 — 仅用 FIFA + att/def 基础值)
+            data = generateRealisticOdds(homeTeam, awayTeam);
+            if (data) {
+                fillOddsFields(data);
+                updateOddsStatus('⚡ 智能生成 (球队实力)', '#60a5fa');
+                document.getElementById('lotterySection').classList.add('open');
+            } else {
+                updateOddsStatus('✗ 暂无数据, 请手动输入', '#ef4444');
+            }
+        }
+
+        /** JSONP 抓取竞彩数据 */
+        function tryJSONPFetch(homeTeam, awayTeam) {
+            return new Promise((resolve) => {
+                const cbName = 'sportteryCB_' + Date.now();
+                const script = document.createElement('script');
+                let settled = false;
+                const cleanup = () => {
+                    clearTimeout(timeout);
+                    delete window[cbName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                };
+                const timeout = setTimeout(() => { if (!settled) { settled = true; cleanup(); resolve(null); } }, 4000);
+
+                window[cbName] = (raw) => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    try {
+                        const parsed = parseSportteryData(raw, homeTeam, awayTeam);
+                        resolve(parsed);
+                    } catch (e) { resolve(null); }
+                };
+
+                script.src = `https://www.sporttery.cn/jc/js/opensj/js/qc/zq_skj.js?callback=${cbName}&_=${Date.now()}`;
+                script.onerror = () => { if (!settled) { settled = true; cleanup(); resolve(null); } };
+                document.head.appendChild(script);
+            });
+        }
+
+        /** 解析竞彩数据格式 */
+        function parseSportteryData(raw, homeTeam, awayTeam) {
+            if (!raw || !Array.isArray(raw)) return null;
+            const matches = [];
+            for (const item of raw) {
+                if (!Array.isArray(item) || item.length < 21) continue;
+                const h = item[2] || '';
+                const a = item[3] || '';
+                const tg = {};
+                if (item[13]) {
+                    tg['0'] = parseFloat(item[13]); tg['1'] = parseFloat(item[14]);
+                    tg['2'] = parseFloat(item[15]); tg['3'] = parseFloat(item[16]);
+                    tg['4'] = parseFloat(item[17]); tg['5'] = parseFloat(item[18]);
+                    tg['6'] = parseFloat(item[19]); tg['7+'] = parseFloat(item[20]);
+                }
+                if (h && a) matches.push({ home: h, away: a, totalGoals: tg, matchId: item[0] });
+            }
+            // 如果是单场匹配,直接填充
+            const found = matches.find(m =>
+                (h.includes(homeTeam) || homeTeam.includes(h))
+                && (a.includes(awayTeam) || awayTeam.includes(a))
+            );
+            if (found && found.totalGoals) fillOddsFields(found.totalGoals);
+            return matches;
+        }
+
+        /**
+         * 智能生成赔率 — 基于球队实力(非11因子模型)
+         * 使用简化公式模拟庄家开盘逻辑, 防止循环依赖
+         */
+        function generateRealisticOdds(homeTeam, awayTeam) {
+            const hData = TEAM_DATABASE[homeTeam];
+            const aData = TEAM_DATABASE[awayTeam];
+            if (!hData || !aData) return null;
+
+            // 简化预期进球 (只用 att/def/fifa, 不用阶段/心理等因子)
+            const rawXG = ((hData.att * aData.def + aData.att * hData.def) / 2);
+            const fifaAdj = ((hData.fifa + aData.fifa) / 2 - 1600) / 3000;
+            const baseXG = rawXG * (1 + fifaAdj) * 1.2; // 1.2 = 简单校准
+            const clampedXG = Math.max(0.8, Math.min(4.5, baseXG));
+
+            // 泊松分布生成总进球概率
+            function poisson(k, lambda) {
+                if (k > 170) return 0;
+                let logP = -lambda + k * Math.log(lambda);
+                for (let i = 2; i <= k; i++) logP -= Math.log(i);
+                return Math.exp(logP);
+            }
+
+            const probs = {};
+            let cumProb = 0;
+            for (let i = 0; i <= 6; i++) {
+                probs[i] = poisson(i, clampedXG);
+                cumProb += probs[i];
+            }
+            probs['7+'] = Math.max(0.001, 1 - cumProb);
+
+            // 概率 → 赔率 (15% 抽水)
+            const odds = {};
+            for (const [k, p] of Object.entries(probs)) {
+                const adjP = Math.max(p, 0.005);
+                odds[k] = parseFloat((0.85 / adjP).toFixed(2));
+                if (odds[k] < 1.15) odds[k] = 1.15; // 最低赔率
+                if (odds[k] > 35) odds[k] = Math.round(odds[k]); // 高赔率取整
+            }
+
+            return odds;
+        }
+
+        /** 填充赔率输入框 */
+        function fillOddsFields(totalGoals) {
+            const map = { '0':'lot0','1':'lot1','2':'lot2','3':'lot3','4':'lot4','5':'lot5','6':'lot6','7+':'lot7p' };
+            for (const [k, id] of Object.entries(map)) {
+                const el = document.getElementById(id);
+                if (el && totalGoals[k] !== undefined) el.value = totalGoals[k];
+            }
+            document.getElementById('lotterySection').classList.add('open');
+        }
+
+        /** 赔率状态显示 */
+        function updateOddsStatus(msg, color) {
+            let el = document.getElementById('oddsStatus');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'oddsStatus';
+                el.style.cssText = 'font-size:0.75rem;text-align:center;margin-top:4px;transition:color 0.3s';
+                const section = document.getElementById('lotterySection');
+                section.querySelector('.collapsible-inner').appendChild(el);
+            }
+            el.textContent = msg;
+            el.style.color = color || '#8892b0';
+        }
+
+        /** 定时刷新赔率 (每60秒) */
+        function startOddsAutoRefresh() {
+            if (oddsFetchTimer) clearInterval(oddsFetchTimer);
+            oddsFetchTimer = setInterval(() => {
+                const h = getSelectedTeam('homeTeam');
+                const a = getSelectedTeam('awayTeam');
+                if (h && a) fetchRealTimeOdds(h, a);
+            }, 60000);
+        }
+
         function fillDemoOdds() {
-            // 模拟一场"进攻型"比赛赔率 (如法国vs阿根廷)
+            const h = getSelectedTeam('homeTeam');
+            const a = getSelectedTeam('awayTeam');
+            if (h && a) {
+                const odds = generateRealisticOdds(h, a);
+                if (odds) { fillOddsFields(odds); updateOddsStatus('⚡ 智能演示赔率', '#60a5fa'); return; }
+            }
             document.getElementById('lot0').value = '10.00';
             document.getElementById('lot1').value = '5.50';
             document.getElementById('lot2').value = '3.60';
@@ -1451,10 +1662,12 @@
             document.getElementById('lot6').value = '12.00';
             document.getElementById('lot7p').value = '18.00';
             document.getElementById('lotterySection').classList.add('open');
+            updateOddsStatus('📊 通用演示赔率', '#fbbf24');
         }
 
         function clearLotteryOdds() {
             document.querySelectorAll('.lottery-inp').forEach(el => el.value = '');
+            updateOddsStatus('', '#8892b0');
         }
 
         function getLotteryOdds() {
