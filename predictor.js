@@ -945,7 +945,23 @@ class WorldCupPredictor {
             const bc = this.config.blowout;
             const amp = 1.0 + Math.min((gapRatio - bc.gapThreshold) * bc.ampFactor, bc.maxAmplification - 1.0);
             const blowoutXG = (strongAtt * weakDef) * amp * bc.baseMultiplier;
-            const blowoutClamped = clamp(blowoutXG, 0.5, 8.0);
+            // 大比分模型也应用赔率修正 (与主模型相同逻辑)
+            let blowoutAdjusted = blowoutXG;
+            if (this.liveData?.data_source === 'lottery') {
+                const capOver = this.liveData.lottery_over_prob || 0.5;
+                const capUnder = this.liveData.lottery_under_prob || 0.5;
+                const capBias = (capOver - 0.5) * 2;
+                const capDir = capOver > capUnder ? '大球' : '小球';
+                const bDir = blowoutAdjusted > this.handicap ? '大球' : '小球';
+                const { maxAdjustment, agreeBoost, disagreeNudge, disagreeThreshold } = this.config.oddsAux;
+                const ma = clamp(capBias * maxAdjustment, -maxAdjustment, maxAdjustment);
+                if (bDir === capDir) {
+                    blowoutAdjusted *= (1.0 + Math.abs(ma) * agreeBoost);
+                } else if (Math.abs(capBias) > disagreeThreshold) {
+                    blowoutAdjusted *= (1.0 + ma * disagreeNudge);
+                }
+            }
+            const blowoutClamped = clamp(blowoutAdjusted, 0.5, 8.0);
             const blowoutScores = this._predictBlowout(blowoutClamped);
             const blowoutIsOver = blowoutClamped > this.handicap;
             blowoutModel = {
