@@ -603,6 +603,109 @@
             color: #c084fc;
             margin-left: 8px;
         }
+
+        /* ===== 可搜索下拉组件 ===== */
+        .searchable-select {
+            position: relative;
+            width: 100%;
+        }
+        .ss-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .ss-search {
+            width: 100%;
+            padding: 10px 32px 10px 14px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .ss-search:focus {
+            border-color: #00d4ff;
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+        .ss-search::placeholder {
+            color: #8892b0;
+        }
+        .ss-arrow {
+            position: absolute;
+            right: 12px;
+            color: #8892b0;
+            font-size: 0.7rem;
+            pointer-events: none;
+            transition: transform 0.3s;
+        }
+        .searchable-select.open .ss-arrow {
+            transform: rotate(180deg);
+            color: #00d4ff;
+        }
+        .ss-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 0;
+            overflow: hidden;
+            background: #16213e;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            z-index: 100;
+            transition: max-height 0.25s ease, border-color 0.3s;
+        }
+        .searchable-select.open .ss-dropdown {
+            max-height: 280px;
+            overflow-y: auto;
+            border-color: #00d4ff;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        .ss-dropdown::-webkit-scrollbar {
+            width: 4px;
+        }
+        .ss-dropdown::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+        }
+        .ss-option {
+            padding: 10px 14px;
+            color: #ccd6f6;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.15s;
+        }
+        .ss-option:hover,
+        .ss-option.active {
+            background: rgba(0, 212, 255, 0.15);
+            color: #fff;
+        }
+        .ss-option.selected {
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        .ss-empty {
+            padding: 16px 14px;
+            color: #8892b0;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .ss-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 99;
+        }
+        .ss-overlay.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -632,15 +735,28 @@
 
                 <div class="form-group">
                     <label>主队</label>
-                    <select id="homeTeam">
-                    </select>
+                    <div class="searchable-select" id="homeTeamSS">
+                        <div class="ss-input-wrapper">
+                            <input type="text" class="ss-search" id="homeTeamSearch" placeholder="搜索球队名称..." autocomplete="off">
+                            <span class="ss-arrow">▼</span>
+                        </div>
+                        <div class="ss-dropdown" id="homeTeamDropdown"></div>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label>客队</label>
-                    <select id="awayTeam">
-                    </select>
+                    <div class="searchable-select" id="awayTeamSS">
+                        <div class="ss-input-wrapper">
+                            <input type="text" class="ss-search" id="awayTeamSearch" placeholder="搜索球队名称..." autocomplete="off">
+                            <span class="ss-arrow">▼</span>
+                        </div>
+                        <div class="ss-dropdown" id="awayTeamDropdown"></div>
+                    </div>
                 </div>
+
+                <!-- 点击空白处关闭下拉的遮罩层 -->
+                <div class="ss-overlay" id="ssOverlay"></div>
 
                 <div class="row">
                     <div class="form-group">
@@ -891,33 +1007,142 @@
         let predictor = null;
         let autoRefreshInterval = null;
         let predictionCount = 0;
+        let activeDropdown = null;      // 当前打开的下拉
+        let activeOptionIdx = -1;       // 键盘导航当前选项索引
+
+        const allTeams = getTeamList();
 
         document.addEventListener('DOMContentLoaded', function() {
-            initTeamSelects();
+            initSearchableSelects();
             document.getElementById('predictBtn').addEventListener('click', doPrediction);
             document.getElementById('autoRefresh').addEventListener('change', toggleAutoRefresh);
             document.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') doPrediction();
+                if (e.key === 'Enter' && !activeDropdown) doPrediction();
             });
             setTimeout(doPrediction, 500);
         });
 
-        function initTeamSelects() {
-            const teams = getTeamList();
-            const homeSelect = document.getElementById('homeTeam');
-            const awaySelect = document.getElementById('awayTeam');
+        // ===== 可搜索下拉组件 =====
+        function initSearchableSelects() {
+            setupSearchableSelect('homeTeam', '法国');
+            setupSearchableSelect('awayTeam', '阿根廷');
+        }
 
-            teams.forEach(team => {
-                [homeSelect, awaySelect].forEach(sel => {
-                    const opt = document.createElement('option');
-                    opt.value = team;
-                    opt.textContent = team;
-                    sel.appendChild(opt);
-                });
+        function setupSearchableSelect(prefix, defaultTeam) {
+            const ss = document.getElementById(prefix + 'SS');
+            const searchInput = document.getElementById(prefix + 'Search');
+            const dropdown = document.getElementById(prefix + 'Dropdown');
+            const overlay = document.getElementById('ssOverlay');
+
+            // 存储当前选中值
+            ss.setAttribute('data-value', defaultTeam);
+            searchInput.value = defaultTeam;
+
+            // 渲染下拉
+            function renderDropdown(filter = '') {
+                const kw = filter.toLowerCase().trim();
+                const filtered = allTeams.filter(t => t.toLowerCase().includes(kw));
+                dropdown.innerHTML = '';
+                if (filtered.length === 0) {
+                    dropdown.innerHTML = '<div class="ss-empty">未找到匹配球队</div>';
+                } else {
+                    filtered.forEach(t => {
+                        const div = document.createElement('div');
+                        div.className = 'ss-option' + (t === ss.getAttribute('data-value') ? ' selected' : '');
+                        div.textContent = t;
+                        div.addEventListener('mousedown', (e) => {
+                            e.preventDefault();
+                            selectTeam(ss, searchInput, dropdown, t);
+                        });
+                        dropdown.appendChild(div);
+                    });
+                }
+            }
+
+            // 打开下拉
+            function openDropdown() {
+                if (activeDropdown && activeDropdown !== ss) closeDropdown(activeDropdown);
+                ss.classList.add('open');
+                overlay.classList.add('active');
+                activeDropdown = ss;
+                activeOptionIdx = -1;
+                renderDropdown(searchInput.value);
+                searchInput.select();
+            }
+
+            // 关闭下拉
+            function closeDropdown(el) {
+                const target = el || activeDropdown;
+                if (!target) return;
+                target.classList.remove('open');
+                overlay.classList.remove('active');
+                if (activeDropdown === target) {
+                    activeDropdown = null;
+                    activeOptionIdx = -1;
+                }
+                // 恢复显示选中值
+                const si = target.querySelector('.ss-search');
+                si.value = target.getAttribute('data-value') || '';
+            }
+
+            // 选中
+            function selectTeam(ssEl, si, dd, team) {
+                ssEl.setAttribute('data-value', team);
+                si.value = team;
+                renderDropdown();
+                closeDropdown(ssEl);
+            }
+
+            // 事件绑定
+            searchInput.addEventListener('focus', () => openDropdown());
+            searchInput.addEventListener('input', () => {
+                if (!ss.classList.contains('open')) openDropdown();
+                renderDropdown(searchInput.value);
+                activeOptionIdx = -1;
+            });
+            searchInput.addEventListener('keydown', (e) => {
+                const opts = dropdown.querySelectorAll('.ss-option');
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (!ss.classList.contains('open')) { openDropdown(); return; }
+                    activeOptionIdx = Math.min(activeOptionIdx + 1, opts.length - 1);
+                    highlightOption(opts);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeOptionIdx = Math.max(activeOptionIdx - 1, 0);
+                    highlightOption(opts);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (activeOptionIdx >= 0 && opts[activeOptionIdx]) {
+                        selectTeam(ss, searchInput, dropdown, opts[activeOptionIdx].textContent);
+                    } else {
+                        closeDropdown(ss);
+                    }
+                } else if (e.key === 'Escape') {
+                    closeDropdown(ss);
+                }
+            });
+            searchInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    if (activeDropdown === ss && document.activeElement !== searchInput) {
+                        closeDropdown(ss);
+                    }
+                }, 150);
             });
 
-            homeSelect.value = '法国';
-            awaySelect.value = '阿根廷';
+            overlay.addEventListener('mousedown', () => closeDropdown());
+
+            function highlightOption(opts) {
+                opts.forEach((o, i) => o.classList.toggle('active', i === activeOptionIdx));
+                if (activeOptionIdx >= 0 && opts[activeOptionIdx]) {
+                    opts[activeOptionIdx].scrollIntoView({ block: 'nearest' });
+                }
+            }
+        }
+
+        /** 获取当前选中的球队值 */
+        function getSelectedTeam(prefix) {
+            return document.getElementById(prefix + 'SS').getAttribute('data-value') || '';
         }
 
         function doPrediction() {
@@ -931,8 +1156,8 @@
 
             setTimeout(() => {
                 try {
-                    const homeTeam = document.getElementById('homeTeam').value;
-                    const awayTeam = document.getElementById('awayTeam').value;
+                    const homeTeam = getSelectedTeam('homeTeam');
+                    const awayTeam = getSelectedTeam('awayTeam');
                     const stage = document.getElementById('stage').value;
                     const handicap = parseFloat(document.getElementById('handicap').value);
                     const situation = document.getElementById('situation').value;
