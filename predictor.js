@@ -759,7 +759,7 @@ class WorldCupPredictor {
         // --- 暂存纯模型预期 ---
         const modelPureXG = clampedExpected;
 
-        // --- 因子共识度 (先算, 贝叶斯融合需要) ---
+        // --- 因子共识度 ---
         const factorValues = [stageF, tacticF, defenseF, marketF, formF, setPieceF, psychF, fatigueR.factor, homeF];
         const bullishFactors = factorValues.filter(v => v > 1.002).length;
         const bearishFactors = factorValues.filter(v => v < 0.998).length;
@@ -770,27 +770,39 @@ class WorldCupPredictor {
         }
 
         // ============================================================
-        // 贝叶斯先验: 竞彩赔率市场共识作为锚点
-        // 市场已内化所有公开信息 — 模型只在有信息优势时偏离
+        // 反向指标: 竞彩赔率 = 资金流向, 非概率预测
+        // 庄家用赔率调节两边投注量, 依靠抽水+大数定律盈利
+        // 当大众资金与模型基本面严重偏离时 → 可能存在价值方向
         // ============================================================
-        let marketXG = null;
-        let modelTrust = 1.0;
-        let priorBlendNote = '纯模型预测';
-
+        let marketAnalysis = null;
         if (this.liveData && this.liveData.data_source === 'lottery'
             && typeof this.liveData.lottery_expected_goals === 'number'
             && this.liveData.lottery_expected_goals > 0) {
 
-            marketXG = this.liveData.lottery_expected_goals;
-            const divergence = Math.abs(modelPureXG - marketXG) / Math.max(marketXG, 0.5);
-            const consensusFactor = clamp(consensus, 0.5, 1.0);
-            modelTrust = clamp(consensusFactor * (1 - divergence * 0.6) * 0.45, 0.15, 0.55);
+            marketAnalysis = {
+                // 资金偏向量 (来自赔率 — 低赔率=大量资金涌入)
+                capitalOverProb: this.liveData.lottery_over_prob || 0.5,
+                capitalUnderProb: this.liveData.lottery_under_prob || 0.5,
+                capitalDirection: (this.liveData.lottery_over_prob || 0) > (this.liveData.lottery_under_prob || 0) ? '大球' : '小球',
+                capitalExpected: this.liveData.lottery_expected_goals,
+            };
 
-            clampedExpected = marketXG + (modelPureXG - marketXG) * modelTrust;
-            clampedExpected = clamp(clampedExpected, 0.3, 7.0);
+            // 模型方向
+            const modelDirection = clampedExpected > this.handicap ? '大球' : '小球';
+            const modelOverProb = clampedExpected > this.handicap ? 0.5 + Math.min((clampedExpected - this.handicap) / this.handicap * 0.3, 0.35) : 0.5 - Math.min((this.handicap - clampedExpected) / this.handicap * 0.3, 0.35);
 
-            const marketWeight = (1 - modelTrust) * 100;
-            priorBlendNote = `市场锚点${marketXG.toFixed(1)}球 → 模型${modelTrust>0.3?'调整':'微调'} → ${clampedExpected.toFixed(1)}球 (市场${marketWeight.toFixed(0)}%)`;
+            // 资金vs模型偏离度
+            marketAnalysis.capitalBias = (marketAnalysis.capitalOverProb - 0.5) * 2; // [-1, +1], + = 大球热
+            marketAnalysis.modelLean = (modelOverProb - 0.5) * 2;                    // [-1, +1], + = 大球倾向
+            marketAnalysis.discrepancy = marketAnalysis.modelLean - marketAnalysis.capitalBias;
+            // > 0: 模型倾向大球但资金追逐小球 → 大球可能被低估
+            // < 0: 资金疯狂追逐大球但模型不看好 → 小球可能被低估
+
+            // 价值方向: 与大众资金反方向, 前提是模型有足够信心
+            const absDisc = Math.abs(marketAnalysis.discrepancy);
+            marketAnalysis.isContrarian = absDisc > 0.25; // 偏离>25%才有反向价值
+            marketAnalysis.valueDirection = marketAnalysis.discrepancy > 0 ? '大球(被低估)' : '小球(被低估)';
+            marketAnalysis.publicBias = marketAnalysis.capitalBias > 0.1 ? '追大球过热' : marketAnalysis.capitalBias < -0.1 ? '追小球过热' : '资金均衡';
         }
 
         // --- 最终判断大小球 (可能已被贝叶斯先验调整) ---
@@ -891,9 +903,8 @@ class WorldCupPredictor {
                 summary: infoEdgeR.summary,
                 signalCount: infoEdgeR.signals.length,
             },
-            // 竞彩赔率市场对比 (有赔率数据时才输出)
-            lotteryMarket: this._buildLotteryMarket(isOver, clampedExpected, marketXG, modelTrust, priorBlendNote),
-            priorBlendNote: priorBlendNote,
+            // 竞彩赔率资金流向分析 (反向指标)
+            marketAnalysis: this._buildMarketAnalysis(isOver, clampedExpected, marketAnalysis),
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),
@@ -949,34 +960,18 @@ class WorldCupPredictor {
         return reasons;
     }
 
-    /** 构建赔率市场对比数据 */
-    _buildLotteryMarket(modelIsOver, modelExpected, marketXGUsed, modelTrustUsed, blendNote) {
-        if (!this.liveData || this.liveData.data_source !== 'lottery') return null;
-        if (this.liveData.lottery_direction === undefined) return null;
-
-        const marketIsOver = this.liveData.lottery_direction === '大球';
-        const marketExpected = marketXGUsed || this.liveData.lottery_expected_goals || 0;
-        const marketConfidence = this.liveData.lottery_confidence || 0;
-        const trustPct = modelTrustUsed != null ? Math.round((1 - modelTrustUsed) * 100) : 100;
-
-        // 模型vs市场一致性
-        let agreement;
-        if (modelIsOver === marketIsOver) {
-            agreement = marketConfidence > 0.15 ? '  强一致' : '  一致';
-        } else {
-            agreement = Math.abs(modelExpected - marketExpected) > 0.8 ? '  严重分歧' : '  分歧';
-        }
-
+    /** 构建赔率资金流向分析 */
+    _buildMarketAnalysis(modelIsOver, modelExpected, maRef) {
+        if (!maRef) return null;
         return {
-            prediction: marketIsOver ? '大球' : '小球',
-            expectedGoals: parseFloat(marketExpected.toFixed(2)),
-            confidence: parseFloat(marketConfidence.toFixed(3)),
-            agreement,
-            marketWeight: trustPct,
-            blendNote: blendNote || '',
-            openness: this.liveData.lottery_openness || 0.5,
-            overProb: this.liveData.lottery_over_prob || 0,
-            underProb: this.liveData.lottery_under_prob || 0,
+            capitalDirection: maRef.capitalDirection,      // 资金追逐方向
+            capitalExpected: maRef.capitalExpected.toFixed(2),
+            publicBias: maRef.publicBias,                  // 大众偏向描述
+            modelDirection: modelIsOver ? '大球' : '小球',
+            modelExpected: modelExpected.toFixed(2),
+            isContrarian: maRef.isContrarian,              // 是否存在反向机会
+            valueDirection: maRef.valueDirection,          // 价值方向
+            discrepancy: maRef.discrepancy.toFixed(3),     // 偏离度 (-1~+1)
         };
     }
 

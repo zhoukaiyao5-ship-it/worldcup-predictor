@@ -913,28 +913,28 @@
                         </div>
                     </div>
 
-                    <!-- 竞彩赔率市场对比 -->
+                    <!-- 竞彩赔率资金流向分析 (反向指标) -->
                     <div class="scorelines fade-in" id="marketSection" style="display:none">
-                        <div class="scorelines-title">  竞彩赔率 vs 模型预测</div>
+                        <div class="scorelines-title">  竞彩赔率 · 资金流向分析</div>
                         <div class="info-edge-stats">
                             <div class="info-edge-stat">
-                                <div class="info-edge-stat-value" id="marketPrediction" style="color:#fbbf24">--</div>
-                                <div class="info-edge-stat-label">市场方向</div>
+                                <div class="info-edge-stat-value" id="mktCapitalDir" style="color:#f59e0b">--</div>
+                                <div class="info-edge-stat-label">资金追逐</div>
                             </div>
                             <div class="info-edge-stat">
-                                <div class="info-edge-stat-value" id="marketExpected" style="color:#fbbf24">--</div>
-                                <div class="info-edge-stat-label">市场预期(球)</div>
+                                <div class="info-edge-stat-value" id="mktPublicBias" style="color:#ef4444">--</div>
+                                <div class="info-edge-stat-label">大众偏向</div>
                             </div>
                             <div class="info-edge-stat">
-                                <div class="info-edge-stat-value" id="marketConfidence" style="color:#fbbf24">--</div>
-                                <div class="info-edge-stat-label">市场置信度</div>
+                                <div class="info-edge-stat-value" id="mktModelDir" style="color:#4ade80">--</div>
+                                <div class="info-edge-stat-label">模型判断</div>
                             </div>
                             <div class="info-edge-stat">
-                                <div class="info-edge-stat-value" id="marketAgreement" style="color:#4ade80">--</div>
-                                <div class="info-edge-stat-label">模型vs市场</div>
+                                <div class="info-edge-stat-value" id="mktValueDir" style="color:#a78bfa">--</div>
+                                <div class="info-edge-stat-label">价值方向</div>
                             </div>
                         </div>
-                        <div style="margin-top:6px;font-size:0.75rem;color:#8892b0;text-align:center" id="marketBlendNote"></div>
+                        <div style="margin-top:6px;font-size:0.75rem;color:#8892b0;text-align:center" id="mktNote"></div>
                     </div>
 
                     <!-- 比分预测 -->
@@ -1320,13 +1320,18 @@
             document.getElementById('underProbability').textContent = Math.round(data.underProbability * 100) + '%';
             document.getElementById('factorConsensus').textContent = Math.round(data.factorConsensus * 100) + '%';
 
-            // 赔率市场对比
-            if (data.lotteryMarket) {
-                document.getElementById('marketPrediction').textContent = data.lotteryMarket.prediction;
-                document.getElementById('marketExpected').textContent = data.lotteryMarket.expectedGoals.toFixed(1);
-                document.getElementById('marketConfidence').textContent = Math.round(data.lotteryMarket.confidence * 100) + '%';
-                document.getElementById('marketAgreement').textContent = data.lotteryMarket.agreement + ' (市场占' + data.lotteryMarket.marketWeight + '%)';
-                document.getElementById('marketBlendNote').textContent = data.lotteryMarket.blendNote || '';
+            // 赔率资金流向分析 (反向指标)
+            if (data.marketAnalysis) {
+                const ma = data.marketAnalysis;
+                document.getElementById('mktCapitalDir').textContent = ma.capitalDirection;
+                document.getElementById('mktCapitalDir').style.color = ma.capitalDirection === '大球' ? '#ef4444' : '#3b82f6';
+                document.getElementById('mktPublicBias').textContent = ma.publicBias;
+                document.getElementById('mktModelDir').textContent = ma.modelDirection + ' ' + ma.modelExpected + '球';
+                document.getElementById('mktValueDir').textContent = ma.isContrarian ? ma.valueDirection : '— 无偏向 —';
+                document.getElementById('mktValueDir').style.color = ma.isContrarian ? '#a78bfa' : '#6b7280';
+                document.getElementById('mktNote').textContent = ma.isContrarian
+                    ? '⚠️ 大众资金与模型严重偏离, 关注' + ma.valueDirection + '方向'
+                    : '资金均衡分布, 无明显反向机会';
                 document.getElementById('marketSection').style.display = 'block';
             } else {
                 document.getElementById('marketSection').style.display = 'none';
