@@ -790,6 +790,8 @@
                     </div>
                     <div class="collapsible-content">
                         <div class="collapsible-inner">
+                            <button class="btn-predict" style="padding:6px;font-size:0.8rem;margin-bottom:8px" onclick="autoDetectPsych()">🤖 自动检测</button>
+                            <div id="psychReasons" style="font-size:0.7rem;color:#60a5fa;margin-bottom:6px;min-height:16px"></div>
                             <div class="form-group"><label>战意</label><select id="psyStake"><option value="常规">常规</option><option value="出线生死战">出线生死战</option><option value="已晋级轮换">已晋级轮换</option><option value="荣誉之战">荣誉之战</option><option value="保级生死战">保级生死战</option></select></div>
                             <div class="form-group"><label>士气</label><select id="psyMorale"><option value="均衡">均衡</option><option value="连胜势头">连胜势头</option><option value="连败低迷">连败低迷</option><option value="将帅不和">将帅不和</option><option value="新帅效应">新帅效应</option></select></div>
                             <div class="form-group"><label>抗压</label><select id="psyPressure"><option value="常态">常态</option><option value="关键战役">关键战役</option><option value="落后追分">落后追分</option><option value="点球预期">点球预期</option></select></div>
@@ -1591,6 +1593,32 @@
                 }
             });
             return hasData ? totalGoals : null;
+        }
+
+        function autoDetectPsych() {
+            const h = getSelectedTeam('homeTeam');
+            const a = getSelectedTeam('awayTeam');
+            const stage = document.getElementById('stage').value;
+            const tournament = document.getElementById('handicap').value; // proxy
+            const hData = TEAM_DATABASE[h];
+            const aData = TEAM_DATABASE[a];
+            if (!hData || !aData) return;
+            const ctx = {
+                homeAdvantage: document.getElementById('homeAdvantage').checked,
+                awayPressure: !document.getElementById('homeAdvantage').checked,
+                standings: document.getElementById('situation').value !== '常规' ? document.getElementById('situation').value : null,
+            };
+            const result = PsychStateAnalyzer.analyze(hData, aData, stage, tournament, ctx);
+            const s = result.state;
+            document.getElementById('psyStake').value = s.stake;
+            document.getElementById('psyMorale').value = s.morale;
+            document.getElementById('psyPressure').value = s.pressure;
+            document.getElementById('psyMentality').value = s.mentality;
+            document.getElementById('psyExternal').value = s.external;
+            document.getElementById('psyHistory').value = s.history;
+            const reasons = Object.entries(result.reasons).map(function(e) { return e[0] + ':' + e[1]; }).join(' | ');
+            document.getElementById('psychReasons').textContent = reasons;
+            document.getElementById('psychSection').classList.add('open');
         }
 
         function toggleAutoRefresh() {

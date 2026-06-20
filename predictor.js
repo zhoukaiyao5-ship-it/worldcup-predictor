@@ -1866,6 +1866,68 @@ class MatchNewsAnalyzer {
     }
 }
 
+// ============================================================
+// 心理状态自动推理引擎 — PsychStateAnalyzer
+// 从球队数据+比赛背景自动推导六维心理状态
+// ============================================================
+
+class PsychStateAnalyzer {
+    /**
+     * @param {Object} home - 主队 TEAM_DATABASE 条目
+     * @param {Object} away - 客队 TEAM_DATABASE 条目
+     * @param {string} stage - 比赛阶段
+     * @param {string} tournament - 赛事类型
+     * @param {Object} context - 额外上下文: standings, recentResults, h2h
+     */
+    static analyze(home, away, stage, tournament, context = {}) {
+        const result = { stake:'常规', morale:'均衡', pressure:'常态', mentality:'常态', external:'中立场地', history:'无特别' };
+        const reasons = {};
+        const hForm = home?.form || 1.5, aForm = away?.form || 1.5;
+
+        // 1. 战意 — 基于比赛阶段和赛事类型
+        if (stage === '决赛') { result.stake = '出线生死战'; reasons.stake = '决赛: 双方全力以赴'; }
+        else if (stage === '半决赛') { result.stake = '出线生死战'; reasons.stake = '半决赛: 离决赛一步之遥'; }
+        else if (stage === '三四名决赛') { result.stake = '荣誉之战'; reasons.stake = '三四名: 荣誉之战'; }
+        else if (tournament === 'Qualifier') { result.stake = '出线生死战'; reasons.stake = '预选赛: 事关晋级'; }
+        else if (context.standings === 'mustWin') { result.stake = '出线生死战'; reasons.stake = '必须赢球才能晋级'; }
+        else if (context.standings === 'alreadyQualified') { result.stake = '已晋级轮换'; reasons.stake = '已出线, 可能轮换'; }
+        else { reasons.stake = '常规小组赛'; }
+
+        // 2. 士气 — 基于近期状态
+        if (hForm >= 2.0 && aForm >= 2.0) { result.morale = '连胜势头'; reasons.morale = '双方状态火热 (均分≥2.0)'; }
+        else if (hForm >= 2.2) { result.morale = '连胜势头'; reasons.morale = '主队状态极佳 (form≥2.2)'; }
+        else if (aForm >= 2.2) { result.morale = '连胜势头'; reasons.morale = '客队状态极佳 (form≥2.2)'; }
+        else if (hForm < 1.3 && aForm < 1.3) { result.morale = '连败低迷'; reasons.morale = '双方状态低迷 (均分<1.3)'; }
+        else if (hForm < 1.2 || aForm < 1.2) { result.morale = '连败低迷'; reasons.morale = '一方状态极差 (form<1.2)'; }
+        else { reasons.morale = '状态均衡'; }
+
+        // 3. 抗压 — 淘汰赛阶段
+        if (stage.includes('决赛') || stage.includes('半决赛')) { result.pressure = '关键战役'; reasons.pressure = stage + ': 高压淘汰赛'; }
+        else if (stage.includes('1/4') || stage.includes('1/8')) { result.pressure = '关键战役'; reasons.pressure = '淘汰赛: 一场定胜负'; }
+        else { reasons.pressure = '小组赛: 有容错空间'; }
+
+        // 4. 战术心态 — 通常默认, 除非有特殊信号
+        if (context.standings === 'drawEnough') { result.mentality = '打平出线'; reasons.mentality = '打平即可出线'; }
+        else if (context.standings === 'mustWin') { result.mentality = '久攻不下'; reasons.mentality = '必须赢球, 可能急躁'; }
+        else { reasons.mentality = '常规战术心态'; }
+
+        // 5. 外部环境 — 主场优势
+        if (context.homeAdvantage) { result.external = '主场氛围'; reasons.external = '主场作战'; }
+        else if (context.awayPressure) { result.external = '客场压力'; reasons.external = '客场作战'; }
+        else { reasons.external = '中立场地'; }
+
+        // 6. 历史惯性 — 基于实力对比
+        if (home && away) {
+            const fifaGap = Math.abs((home.fifa || 1500) - (away.fifa || 1500));
+            if (fifaGap > 200) { result.history = home.fifa > away.fifa ? '历史优势' : '历史劣势'; reasons.history = 'FIFA差距>200分'; }
+            else if (context.rivalry) { result.history = '宿敌对决'; reasons.history = '历史宿敌/德比'; }
+            else { reasons.history = '无特殊历史惯性'; }
+        }
+
+        return { state: result, reasons };
+    }
+}
+
 // ==================== 深层合并工具 ====================
 function deepMerge(target, ...sources) {
     for (const src of sources) {
@@ -1977,6 +2039,7 @@ if (typeof window !== 'undefined') {
     window.WorldCupPredictor = WorldCupPredictor;
     window.LotteryOddsAnalyzer = LotteryOddsAnalyzer;
     window.MatchNewsAnalyzer = MatchNewsAnalyzer;
+    window.PsychStateAnalyzer = PsychStateAnalyzer;
     window.generateMockLiveData = generateMockLiveData;
     window.getTeamList = getTeamList;
     window.TEAM_DATABASE = TEAM_DATABASE;
