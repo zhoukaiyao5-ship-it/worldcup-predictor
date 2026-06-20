@@ -906,6 +906,25 @@
 
                 <div id="integrityRisk" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.8rem;color:#fca5a5;text-align:center"></div>
 
+                <!-- 胜平负预测 -->
+                <div class="scorelines fade-in" id="winSection" style="display:block;margin-bottom:12px">
+                    <div style="display:flex;justify-content:space-around;align-items:center">
+                        <div style="text-align:center;flex:1">
+                            <div style="font-size:0.7rem;color:#8892b0">主胜</div>
+                            <div style="font-size:1.2rem;font-weight:bold;color:#4ade80" id="winHome">--</div>
+                        </div>
+                        <div style="text-align:center;flex:1">
+                            <div style="font-size:0.7rem;color:#8892b0">平局</div>
+                            <div style="font-size:1.2rem;font-weight:bold;color:#fbbf24" id="winDraw">--</div>
+                        </div>
+                        <div style="text-align:center;flex:1">
+                            <div style="font-size:0.7rem;color:#8892b0">客胜</div>
+                            <div style="font-size:1.2rem;font-weight:bold;color:#60a5fa" id="winAway">--</div>
+                        </div>
+                    </div>
+                    <div style="text-align:center;margin-top:4px;font-size:0.8rem;color:#fbbf24" id="winPredLabel">--</div>
+                </div>
+
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
                     <div class="loading-text">正在分析数据...</div>
@@ -1347,6 +1366,15 @@
                 document.getElementById('marketSection').style.display = 'block';
             } else {
                 document.getElementById('marketSection').style.display = 'none';
+            }
+
+            // 胜平负
+            if (data.winPrediction) {
+                const wp = data.winPrediction;
+                document.getElementById('winHome').textContent = Math.round(wp.homeProb * 100) + '%';
+                document.getElementById('winDraw').textContent = Math.round(wp.drawProb * 100) + '%';
+                document.getElementById('winAway').textContent = Math.round(wp.awayProb * 100) + '%';
+                document.getElementById('winPredLabel').textContent = '预测: ' + wp.prediction;
             }
 
             // 诚信风险

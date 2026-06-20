@@ -1022,6 +1022,12 @@ class WorldCupPredictor {
 
         // 比分分布概率和 — 用于展示, 不改变O/U判定
 
+        // 胜平负 (从比分分布聚合)
+        const winHome = scorelines.reduce((s, sl) => s + (sl.home > sl.away ? sl.probability : 0), 0);
+        const winDraw = scorelines.reduce((s, sl) => s + (sl.home === sl.away ? sl.probability : 0), 0);
+        const winAway = 1 - winHome - winDraw;
+        const winPred = winHome > Math.max(winDraw, winAway) ? '主胜' : winAway > Math.max(winHome, winDraw) ? '客胜' : '平局';
+
         // --- 因子详情 ---
         const factorsDetail = {
             '基础预期进球':    { value: baseVal.toFixed(2),     multiplier: baseVal.toFixed(2) },
@@ -1095,6 +1101,12 @@ class WorldCupPredictor {
             marketAnalysis: this._buildMarketAnalysis(isOver, clampedExpected, marketAnalysis),
             blowoutModel: blowoutModel,
             integrityRisk: integrityRisk,
+            winPrediction: {
+                prediction: winPred,
+                homeProb: parseFloat(winHome.toFixed(3)),
+                drawProb: parseFloat(winDraw.toFixed(3)),
+                awayProb: parseFloat(winAway.toFixed(3)),
+            },
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),
