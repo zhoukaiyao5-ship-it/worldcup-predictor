@@ -215,6 +215,16 @@ const CONFIG = {
         consistencyPenalty: 0.75,
     },
 
+    // 六维心理矩阵 — 每个维度独立贡献进球效应
+    psychology: {
+        stakes:   { '常规':1.0, '出线生死战':1.08, '已晋级轮换':0.88, '荣誉之战':0.92, '保级生死战':1.05 },
+        morale:   { '均衡':1.0, '连胜势头':1.06, '连败低迷':0.90, '将帅不和':0.85, '新帅效应':1.04 },
+        pressure: { '常态':1.0, '关键战役':0.94, '落后追分':1.06, '点球预期':0.92 },
+        mentality:{ '常态':1.0, '领先后保守':0.88, '久攻不下':1.04, '打平出线':0.85 },
+        external: { '中立场地':1.0, '主场氛围':1.04, '客场压力':0.94, '裁判争议':1.02 },
+        history:  { '无特别':1.0, '宿敌对决':1.06, '历史劣势':0.92, '历史优势':1.03 },
+    },
+
     // 因子权重 (回测优化: 降低defense权重防止过度压制进球)
     factorWeights: {
         base:       1.0,
@@ -343,7 +353,7 @@ class WorldCupPredictor {
      * @param {string} [morale='均衡'] - 士气类型
      * @param {object} [opts] - 可选参数 { homeAdvantage, restDaysHome, restDaysAway }
      */
-    setMatch(home, away, stage = '小组赛', handicap = 2.5, situation = '常规', morale = '均衡', opts = {}, tournament = null) {
+    setMatch(home, away, stage = '小组赛', handicap = 2.5, situation = '常规', morale = '均衡', opts = {}, tournament = null, psyState = null) {
         this.home = validateTeam(home);
         this.away = validateTeam(away);
         this.homeName = home.trim();
@@ -363,6 +373,11 @@ class WorldCupPredictor {
         this.homeAdvantage = opts.homeAdvantage ?? false;
         this.restDaysHome = opts.restDaysHome ?? 7;
         this.restDaysAway = opts.restDaysAway ?? 7;
+
+        // 六维心理状态 — 新接口 (+ 向后兼容旧situation/morale)
+        this.psyState = psyState || {};
+        if (!this.psyState.stake && this.situation && this.situation !== '常规') this.psyState.stake = this.situation;
+        if (!this.psyState.morale && this.morale && this.morale !== '均衡') this.psyState.morale = this.morale;
 
         return this; // 链式调用
     }
@@ -466,14 +481,21 @@ class WorldCupPredictor {
         const effect = avgSP / 0.30;
         return 1.0 + (effect - 1.0) * this.config.factorWeights.setPiece;
     }
-
-    /** 因子7: 心理因素 */
+    /** 因子7: 六维心理因素 — 几何平均合成, 各维度独立等权 */
     _factorPsychology() {
-        const sitM = this.config.situationMultiplier[this.situation] ?? 1.0;
-        const morM = this.config.moraleMultiplier[this.morale] ?? 1.0;
-        // 两种效应取几何平均避免重复计算
-        const combined = Math.sqrt(sitM * morM);
-        return 1.0 + (combined - 1.0) * this.config.factorWeights.psychology;
+        const psy = this.config.psychology;
+        const pw = this.config.factorWeights.psychology;
+        const s = this.psyState || {};
+        const vals = [
+            psy.stakes[s.stake] || psy.stakes['常规'],
+            psy.morale[s.morale] || psy.morale['均衡'],
+            psy.pressure[s.pressure] || psy.pressure['常态'],
+            psy.mentality[s.mentality] || psy.mentality['常态'],
+            psy.external[s.external] || psy.external['中立场地'],
+            psy.history[s.history] || psy.history['无特别'],
+        ];
+        const combined = Math.pow(vals.reduce((a, v) => a * v, 1.0), 1 / vals.length);
+        return 1.0 + (combined - 1.0) * pw;
     }
 
     /** 因子8: 疲劳 */

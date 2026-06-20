@@ -782,24 +782,38 @@
                     </div>
                 </div>
 
+                <!-- 六维心理因子 -->
+                <div class="collapsible" id="psychSection">
+                    <div class="collapsible-header" onclick="toggleCollapsible('psychSection')">
+                        <span class="collapsible-title">🧠 赛场心理因子</span>
+                        <span class="collapsible-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="collapsible-inner">
+                            <div class="form-group"><label>战意</label><select id="psyStake"><option value="常规">常规</option><option value="出线生死战">出线生死战</option><option value="已晋级轮换">已晋级轮换</option><option value="荣誉之战">荣誉之战</option><option value="保级生死战">保级生死战</option></select></div>
+                            <div class="form-group"><label>士气</label><select id="psyMorale"><option value="均衡">均衡</option><option value="连胜势头">连胜势头</option><option value="连败低迷">连败低迷</option><option value="将帅不和">将帅不和</option><option value="新帅效应">新帅效应</option></select></div>
+                            <div class="form-group"><label>抗压</label><select id="psyPressure"><option value="常态">常态</option><option value="关键战役">关键战役</option><option value="落后追分">落后追分</option><option value="点球预期">点球预期</option></select></div>
+                            <div class="form-group"><label>战术心态</label><select id="psyMentality"><option value="常态">常态</option><option value="领先后保守">领先后保守</option><option value="久攻不下">久攻不下</option><option value="打平出线">打平出线</option></select></div>
+                            <div class="form-group"><label>外部环境</label><select id="psyExternal"><option value="中立场地">中立场地</option><option value="主场氛围">主场氛围</option><option value="客场压力">客场压力</option><option value="裁判争议">裁判争议</option></select></div>
+                            <div class="form-group"><label>历史惯性</label><select id="psyHistory"><option value="无特别">无特别</option><option value="宿敌对决">宿敌对决</option><option value="历史劣势">历史劣势</option><option value="历史优势">历史优势</option></select></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="row">
                     <div class="form-group">
-                        <label>出线形势</label>
+                        <label>出线形势 (旧)</label>
                         <select id="situation">
                             <option value="常规">常规</option>
                             <option value="双双出线">双双出线</option>
                             <option value="生死战">生死战</option>
                             <option value="荣誉之战">荣誉之战</option>
-                            <option value="一方出线">一方出线</option>
-                            <option value="双双淘汰">双双淘汰</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>士气类型</label>
+                        <label>士气 (旧)</label>
                         <select id="morale">
                             <option value="均衡">均衡</option>
-                            <option value="强势方高">强势方高</option>
-                            <option value="弱势方高">弱势方高</option>
                             <option value="对攻预期">对攻预期</option>
                             <option value="保守预期">保守预期</option>
                             <option value="双方低迷">双方低迷</option>
@@ -1160,13 +1174,23 @@
                     const restDaysHome = parseInt(document.getElementById('restDaysHome').value) || 7;
                     const restDaysAway = parseInt(document.getElementById('restDaysAway').value) || 7;
 
+                    // 六维心理状态
+                    const psyState = {
+                        stake: document.getElementById('psyStake').value,
+                        morale: document.getElementById('psyMorale').value,
+                        pressure: document.getElementById('psyPressure').value,
+                        mentality: document.getElementById('psyMentality').value,
+                        external: document.getElementById('psyExternal').value,
+                        history: document.getElementById('psyHistory').value,
+                    };
+
                     // 创建预测器
                     predictor = new WorldCupPredictor();
                     predictor.setMatch(homeTeam, awayTeam, stage, handicap, situation, morale, {
                         homeAdvantage,
                         restDaysHome,
                         restDaysAway,
-                    });
+                    }, null, psyState);
 
                     // 构建实时数据
                     let liveData = null;
