@@ -154,6 +154,16 @@ const CONFIG = {
         drawInflation: 1.0,      // 网格最优: Poisson自然平局率最优
     },
 
+    // 集成学习 — 模拟XGBoost多模型投票
+    ensemble: {
+        enabled: false,          // 实验性: 暂不如单模型
+        members: [
+            { gm: 1.25, ds: 2.6, ma: 1.40 },  // 基准
+            { gm: 1.20, ds: 2.4, ma: 1.35 },  // 保守
+            { gm: 1.30, ds: 2.8, ma: 1.45 },  // 激进
+        ],
+    },
+
     // 大比分模型 — WC-only 192路网格最优 (WC 59.6%/blowout 58%)
     blowout: {
         gapThreshold: 1.4,       // WC最优: 适中阈值
@@ -826,6 +836,87 @@ class WorldCupPredictor {
         }
     }
 
+    /** 集成预测: 多组参数投票 → 稳定性+准确性提升 */
+    _ensemblePredict(ensConfig) {
+        const members = ensConfig.members;
+        const results = [];
+        const savedConfig = { ...this.config };
+
+        // 保存原始xG计算的值
+        const origBase = this._factorBase.bind(this);
+
+        for (const mem of members) {
+            // 临时应用成员参数
+            this.config.globalBaseMultiplier = mem.gm;
+            this.config.defenseScaling = mem.ds;
+            this.config.mismatch.maxAmplification = mem.ma;
+
+            // 只重新计算 baseVal + 核心乘法链 (简化集成)
+            const baseVal = this._factorBase();
+            const stageF = this._factorStage();
+            const tacticF = this._factorTactic();
+            const defenseF = this._factorDefense();
+            const formF = this._factorForm();
+            const psychF = this._factorPsychology();
+            const fatigueR = this._factorFatigue();
+            const homeF = this._factorHome();
+            const tournamentF = this._factorTournament();
+
+            const xg = baseVal * stageF * tacticF * defenseF * formF * psychF * fatigueR.factor * homeF * tournamentF;
+            results.push(clamp(xg, 0.3, 7.0));
+        }
+
+        // 恢复配置
+        Object.assign(this.config, savedConfig);
+
+        // 投票: 各个成员预测的大小球方向
+        const votes = results.map(xg => xg > this.handicap ? '大球' : '小球');
+        const overVotes = votes.filter(v => v === '大球').length;
+        const underVotes = votes.filter(v => v === '小球').length;
+        const ensembleIsOver = overVotes > underVotes;
+        // 加权平均 xG
+        const ensembleXG = results.reduce((s, v) => s + v, 0) / results.length;
+
+        // 置信度: 投票一致性越高, 置信度越高
+        const consensusRatio = Math.max(overVotes, underVotes) / members.length;
+        const confidence = 0.5 + consensusRatio * 0.35;
+
+        // 返回简化结果
+        const scorelines = this._predictScorelines(ensembleXG);
+        const overProb = scorelines.reduce((s, sl) => s + (sl.isOver ? sl.probability : 0), 0);
+        const underProb = scorelines.reduce((s, sl) => s + (sl.isUnder ? sl.probability : 0), 0);
+
+        return {
+            prediction: ensembleIsOver ? '大球' : '小球',
+            isOver: ensembleIsOver,
+            expectedGoals: parseFloat(ensembleXG.toFixed(2)),
+            confidence: parseFloat(confidence.toFixed(3)),
+            edge: parseFloat((ensembleXG - this.handicap).toFixed(2)),
+            handicap: this.handicap,
+            homeTeam: this.homeName,
+            awayTeam: this.awayName,
+            stage: this.stage,
+            overProbability: parseFloat(overProb.toFixed(3)),
+            underProbability: parseFloat(underProb.toFixed(3)),
+            topScorelines: scorelines.slice(0, 5).map(s => ({
+                score: s.score,
+                probability: parseFloat((s.probability * 100).toFixed(1)),
+                total: s.total,
+                isOver: s.isOver ? '大球' : '小球',
+            })),
+            ensembleInfo: { members: members.length, votes: `${overVotes}:${underVotes}`, consensus: Math.round(consensusRatio * 100) + '%' },
+            winPrediction: null,
+            blowoutModel: null,
+            integrityRisk: null,
+            insights: [`集成${members.length}模型投票: ${overVotes}:${underVotes}`, `加权xG: ${ensembleXG.toFixed(2)}`],
+            factorConsensus: consensusRatio,
+            dataQuality: 1.0,
+            infoEdge: { impact: 0, summary: '集成模式', signalCount: 0 },
+            fatigue: { index: 0, percent: 0, secondHalfRatio: 50, restDays: 7 },
+            modelVersion: '3.0-ensemble',
+        };
+    }
+
     // ==================== 主预测 ====================
 
     predict() {
@@ -834,6 +925,12 @@ class WorldCupPredictor {
         }
 
         this._predictionCount++;
+
+        // --- 集成学习: 多参数配置投票 ---
+        const ensConfig = this.config.ensemble;
+        if (ensConfig?.enabled && ensConfig.members?.length > 1) {
+            return this._ensemblePredict(ensConfig);
+        }
 
         // --- 计算所有因子 ---
         const baseVal = this._factorBase();
