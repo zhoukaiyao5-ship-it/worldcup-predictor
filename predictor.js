@@ -1436,7 +1436,7 @@ class WorldCupPredictor {
     }
 
     /**
-     * 赛后学习 v2 — 完整闭环
+     * 赛后自学习 Agent — 主动分析+全方位优化
      */
     learnFromResult(actualHomeScore, actualAwayScore) {
         const last = this._lastPrediction;
@@ -1444,80 +1444,114 @@ class WorldCupPredictor {
         const actualTotal = actualHomeScore + actualAwayScore;
         const wasCorrect = last.prediction === (actualTotal > last.handicap ? '大球' : '小球');
         const scenario = WorldCupPredictor.classifyScenario(last.gapRatio, last.tournament);
-
-        // 误差归因
         const errorType = this._attributeError(last.expectedGoals, actualTotal, last.baseVal, wasCorrect, last.gapRatio);
 
-        // 场景专属参数存储
-        if (!this._scenarioParams) this._scenarioParams = {};
-        if (!this._scenarioParams[scenario]) this._scenarioParams[scenario] = { count: 0, correct: 0, xgBias: 0, gm: this.config.globalBaseMultiplier };
+        // Agent 知识库初始化
+        if (!this._agentState) this._agentState = {
+            scenarios: {}, tournaments: {}, teams: {}, factorErrors: {},
+            safeSnapshot: null, totalLearned: 0, decisions: [],
+        };
+        const ag = this._agentState;
+        ag.totalLearned++;
 
-        const sp = this._scenarioParams[scenario];
-        sp.count++;
-        if (wasCorrect) sp.correct++;
-        sp.xgBias = sp.xgBias * 0.9 + (last.expectedGoals - actualTotal) * 0.1;
+        // ----- 1. 场景分析 -----
+        if (!ag.scenarios[scenario]) ag.scenarios[scenario] = { n: 0, ok: 0, xgErr: [] };
+        const sc = ag.scenarios[scenario]; sc.n++; if (wasCorrect) sc.ok++;
+        sc.xgErr.push(last.expectedGoals - actualTotal);
+        if (sc.xgErr.length > 30) sc.xgErr.shift();
+        const scAcc = sc.ok / sc.n;
 
-        // 校准日志 (带时间戳用于衰减)
-        this._calibrationLog.push({
-            ts: Date.now(), scenario, errorType, wasCorrect,
-            predictedXG: last.expectedGoals, actualTotal,
-            home: last.home, away: last.away,
+        // ----- 2. 赛事分析 -----
+        const tour = last.tournament || 'unknown';
+        if (!ag.tournaments[tour]) ag.tournaments[tour] = { n: 0, ok: 0 };
+        ag.tournaments[tour].n++; if (wasCorrect) ag.tournaments[tour].ok++;
+
+        // ----- 3. 球队分析 -----
+        [last.home, last.away].forEach(t => {
+            if (!ag.teams[t]) ag.teams[t] = { n: 0, ok: 0, overPred: 0 };
+            ag.teams[t].n++; if (wasCorrect) ag.teams[t].ok++;
+            if (last.expectedGoals > actualTotal) ag.teams[t].overPred++;
+            else ag.teams[t].overPred--;
         });
-        if (this._calibrationLog.length > 500) this._calibrationLog.shift();
 
-        // 定向修正 (仅修改场景相关参数)
-        const DAY_MS = 86400000;
-        const now = Date.now();
-        const recentLogs = this._calibrationLog.filter(l => (now - l.ts) / DAY_MS < 60); // 60天内
-        const recentAcc = recentLogs.filter(l => l.wasCorrect).length / Math.max(recentLogs.length, 1);
-
-        let adjustment = 0;
-        switch (errorType) {
-            case 'base_overestimate': adjustment = -0.03; break;
-            case 'base_underscoremate': adjustment = +0.03; break;
-            case 'upset': adjustment = 0; break; // 爆冷不调参
-            case 'factor_weight': adjustment = wasCorrect ? 0 : (last.expectedGoals > actualTotal ? -0.02 : +0.02); break;
-            default: adjustment = wasCorrect ? 0 : (last.expectedGoals > actualTotal ? -0.01 : +0.01);
+        // ----- 4. 因子归因 -----
+        if (errorType === 'factor_weight' || errorType === 'xg_calibration') {
+            const fw = this.config.factorWeights;
+            // 检查哪些因子权重可能导致偏差
+            const suspects = [];
+            if (Math.abs(last.expectedGoals - actualTotal) > 1.0) {
+                suspects.push('base');
+                ag.factorErrors.base = (ag.factorErrors.base || 0) + (last.expectedGoals > actualTotal ? 1 : -1);
+            }
+            if (scenario === 'blowout' && errorType === 'base_overestimate') {
+                suspects.push('mismatch');
+                ag.factorErrors.mismatch = (ag.factorErrors.mismatch || 0) + 1;
+            }
+            if (tour === 'Copa' && !wasCorrect) {
+                ag.factorErrors.tournament = (ag.factorErrors.tournament || 0) + (last.expectedGoals > actualTotal ? 1 : -1);
+            }
         }
 
-        // 漂移止损: 连续多期低于基线则回退
-        const baselineAcc = 0.58;
-        if (recentLogs.length >= 20 && recentAcc < baselineAcc) {
-            adjustment = 0;
-            this.config.globalBaseMultiplier = this._safeParams?.globalBaseMultiplier || 1.25;
-        } else if (adjustment !== 0) {
-            // 保存安全参数
-            if (!this._safeParams) this._safeParams = { globalBaseMultiplier: this.config.globalBaseMultiplier };
-            this.config.globalBaseMultiplier = clamp(this.config.globalBaseMultiplier + adjustment, 0.95, 1.70);
+        // ----- 5. Agent 决策: 多维度优化 -----
+        const decisions = [];
+        const DAY_MS = 86400000; const now = Date.now();
+
+        // 决策A: 场景持续失准 → 调 globalBase
+        if (sc.n >= 8 && scAcc < 0.50) {
+            const avgErr = sc.xgErr.reduce((a, b) => a + b, 0) / sc.xgErr.length;
+            const adj = clamp(-avgErr * 0.02, -0.03, 0.03);
+            if (!this._safeSnapshot) this._safeSnapshot = { gm: this.config.globalBaseMultiplier, ds: this.config.defenseScaling, fw: { ...this.config.factorWeights } };
+            this.config.globalBaseMultiplier = clamp(this.config.globalBaseMultiplier + adj, 0.95, 1.70);
+            decisions.push(`场景[${scenario}]${scAcc<0.40?'严重':''}失准(${(scAcc*100).toFixed(0)}%), globalBase ${adj>0?'+'+adj.toFixed(2):adj.toFixed(2)}`);
         }
 
-        // 数据衰减: 更新球队数据 (旧数据权重降低)
+        // 决策B: 赛事持续失准 → 调赛事因子
+        if (ag.tournaments[tour].n >= 10 && ag.tournaments[tour].ok / ag.tournaments[tour].n < 0.45) {
+            // 通过 tournamentF 微调
+            decisions.push(`赛事[${tour}]${ag.tournaments[tour].ok}/${ag.tournaments[tour].n}失准, 标记待校准`);
+        }
+
+        // 决策C: blowout 场景连续高估 → 降低 mismatch maxAmp
+        if (scenario === 'blowout' && sc.n >= 5 && scAcc < 0.40) {
+            this.config.mismatch.maxAmplification = clamp(this.config.mismatch.maxAmplification - 0.02, 1.10, 1.60);
+            decisions.push(`blowout连续高估, mismatch.maxAmp → ${this.config.mismatch.maxAmplification.toFixed(2)}`);
+        }
+
+        // 决策D: 漂移止损
+        const totalAcc = ag.totalLearned > 0
+            ? Object.values(ag.scenarios).reduce((s, sc) => s + sc.ok, 0) / Object.values(ag.scenarios).reduce((s, sc) => s + sc.n, 0)
+            : 1;
+        if (ag.totalLearned >= 30 && totalAcc < 0.52 && this._safeSnapshot) {
+            this.config.globalBaseMultiplier = this._safeSnapshot.gm;
+            this.config.defenseScaling = this._safeSnapshot.ds;
+            this.config.factorWeights = { ...this._safeSnapshot.fw };
+            decisions.push('⚠️ 漂移止损: 回退全部参数至安全快照');
+        }
+
+        // 更新安全快照 (每20场保存一次)
+        if (ag.totalLearned % 20 === 0 && totalAcc >= 0.55) {
+            this._safeSnapshot = { gm: this.config.globalBaseMultiplier, ds: this.config.defenseScaling, fw: { ...this.config.factorWeights } };
+        }
+
+        // ----- 6. 球队数据 EMA (极保守) -----
         const hOld = TEAM_DATABASE[last.home]; const aOld = TEAM_DATABASE[last.away];
-        if (hOld) {
-            const hDays = (hOld._lastUpdate ? (now - hOld._lastUpdate) / DAY_MS : 30);
-            const hDecay = WorldCupPredictor.decayWeight(hDays);
-            const hRate = 0.015 * hDecay; // 极保守学习率
-            hOld.att = +(hOld.att * (1 - hRate) + actualHomeScore * hRate).toFixed(2);
-            hOld.def = +(hOld.def * (1 - hRate) + actualAwayScore * hRate).toFixed(2);
-            hOld._lastUpdate = now;
-        }
-        if (aOld) {
-            const aDays = (aOld._lastUpdate ? (now - aOld._lastUpdate) / DAY_MS : 30);
-            const aDecay = WorldCupPredictor.decayWeight(aDays);
-            const aRate = 0.015 * aDecay;
-            aOld.att = +(aOld.att * (1 - aRate) + actualAwayScore * aRate).toFixed(2);
-            aOld.def = +(aOld.def * (1 - aRate) + actualHomeScore * aRate).toFixed(2);
-            aOld._lastUpdate = now;
-        }
+        [hOld, aOld].forEach((td, idx) => {
+            if (!td) return;
+            const gf = idx === 0 ? actualHomeScore : actualAwayScore;
+            const ga = idx === 0 ? actualAwayScore : actualHomeScore;
+            td._lastUpdate = now;
+            td.att = +(td.att * 0.985 + gf * 0.015).toFixed(2);
+            td.def = +(td.def * 0.985 + ga * 0.015).toFixed(2);
+        });
+
+        ag.decisions.push({ ts: now, scenario, errorType, decisions: [...decisions], wasCorrect });
+        if (ag.decisions.length > 100) ag.decisions.shift();
 
         return {
-            wasCorrect, errorType, scenario,
-            scenarioAcc: (sp.correct / sp.count * 100).toFixed(0) + '%',
-            recentAcc: (recentAcc * 100).toFixed(0) + '%',
-            gmNow: this.config.globalBaseMultiplier.toFixed(3),
-            adjustment,
-            teamsUpdated: [last.home, last.away],
-            insight: `${scenario} | ${errorType} | 场景准确率${(sp.correct/sp.count*100).toFixed(0)}% | ${wasCorrect?'✓':'✗'} ${adjustment!==0?('调参'+adjustment.toFixed(2)):'保持'}`,
+            wasCorrect, errorType, scenario, scenarioAcc: (scAcc * 100).toFixed(0) + '%',
+            totalAcc: (totalAcc * 100).toFixed(0) + '%',
+            decisions,
+            insight: `Agent: ${errorType} | ${scenario}(${(scAcc*100).toFixed(0)}%) | ${decisions.length>0?'决策:'+decisions.join('; '):'保持'}`,
         };
     }
     backtest(matches) {
