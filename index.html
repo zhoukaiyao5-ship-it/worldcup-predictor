@@ -1540,37 +1540,38 @@
             const aData = TEAM_DATABASE[awayTeam];
             if (!hData || !aData) return null;
 
-            // 简化预期进球 (只用 att/def/fifa, 不用阶段/心理等因子)
-            const rawXG = ((hData.att * aData.def + aData.att * hData.def) / 2);
-            const fifaAdj = ((hData.fifa + aData.fifa) / 2 - 1600) / 3000;
-            const baseXG = rawXG * (1 + fifaAdj) * 1.2; // 1.2 = 简单校准
-            const clampedXG = Math.max(0.8, Math.min(4.5, baseXG));
+            // 使用与模型一致的防守缩放 (defenseScaling=2.6)
+            const DS = 2.6;
+            const scaledADef = 0.5 + (aData.def - 0.5) * DS;
+            const scaledHDef = 0.5 + (hData.def - 0.5) * DS;
 
-            // 泊松分布生成总进球概率
+            // 预期进球 = 模型公式简化版 (无阶段/心理等因子)
+            const hXG = hData.att * scaledADef;
+            const aXG = aData.att * scaledHDef;
+            const rawXG = (hXG + aXG) / 2;
+            const fifaAdj = ((hData.fifa + aData.fifa) / 2 - 1600) / 4000;
+            const baseXG = rawXG * (1 + fifaAdj) * 1.25; // globalBase≈1.25
+            const clampedXG = Math.max(0.8, Math.min(5.0, baseXG));
+
             function poisson(k, lambda) {
                 if (k > 170) return 0;
-                let logP = -lambda + k * Math.log(lambda);
-                for (let i = 2; i <= k; i++) logP -= Math.log(i);
+                var logP = -lambda + k * Math.log(lambda);
+                for (var i = 2; i <= k; i++) logP -= Math.log(i);
                 return Math.exp(logP);
             }
 
-            const probs = {};
-            let cumProb = 0;
-            for (let i = 0; i <= 6; i++) {
-                probs[i] = poisson(i, clampedXG);
-                cumProb += probs[i];
-            }
+            var probs = {}, cumProb = 0;
+            for (var i = 0; i <= 6; i++) { probs[i] = poisson(i, clampedXG); cumProb += probs[i]; }
             probs['7+'] = Math.max(0.001, 1 - cumProb);
 
-            // 概率 → 赔率 (15% 抽水)
-            const odds = {};
-            for (const [k, p] of Object.entries(probs)) {
-                const adjP = Math.max(p, 0.008);  // 最低概率 0.8% — 防止天文数字赔率
-                const rawOdds = 0.85 / adjP;
-                odds[k] = parseFloat(Math.min(rawOdds, 50.00).toFixed(2)); // 最高赔率封顶50
-                if (odds[k] < 1.12) odds[k] = 1.12; // 最低赔率
+            // 赔率: 25%抽水 (接近真实竞彩)
+            var odds = {};
+            for (var k in probs) {
+                var adjP = Math.max(probs[k], 0.008);
+                var rawOdds = 0.75 / adjP;
+                odds[k] = parseFloat(Math.min(rawOdds, 50.00).toFixed(2));
+                if (odds[k] < 1.12) odds[k] = 1.12;
             }
-
             return odds;
         }
 
