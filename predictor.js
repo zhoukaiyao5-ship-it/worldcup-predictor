@@ -1496,7 +1496,7 @@ class WorldCupPredictor {
         if (hOld) {
             const hDays = (hOld._lastUpdate ? (now - hOld._lastUpdate) / DAY_MS : 30);
             const hDecay = WorldCupPredictor.decayWeight(hDays);
-            const hRate = 0.05 * hDecay;
+            const hRate = 0.015 * hDecay; // 极保守学习率
             hOld.att = +(hOld.att * (1 - hRate) + actualHomeScore * hRate).toFixed(2);
             hOld.def = +(hOld.def * (1 - hRate) + actualAwayScore * hRate).toFixed(2);
             hOld._lastUpdate = now;
@@ -1504,7 +1504,7 @@ class WorldCupPredictor {
         if (aOld) {
             const aDays = (aOld._lastUpdate ? (now - aOld._lastUpdate) / DAY_MS : 30);
             const aDecay = WorldCupPredictor.decayWeight(aDays);
-            const aRate = 0.05 * aDecay;
+            const aRate = 0.015 * aDecay;
             aOld.att = +(aOld.att * (1 - aRate) + actualAwayScore * aRate).toFixed(2);
             aOld.def = +(aOld.def * (1 - aRate) + actualHomeScore * aRate).toFixed(2);
             aOld._lastUpdate = now;
@@ -1544,6 +1544,11 @@ class WorldCupPredictor {
                 const matchTotal = m.actualTotal !== undefined ? m.actualTotal : (m.hScore + m.aScore);
                 const actualOver = matchTotal > (m.handicap || 2.5);
                 const isCorrect = pred.isOver === actualOver;
+
+                // 自动学习: 仅在前50场后启用 (给模型足够的基线数据)
+                if (m.hScore !== undefined && m.aScore !== undefined && total > 50) {
+                    this.learnFromResult(m.hScore, m.aScore);
+                }
 
                 if (isCorrect) correct++;
                 total++;
