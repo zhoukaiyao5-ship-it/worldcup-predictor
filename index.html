@@ -897,6 +897,24 @@
                     </div>
                 </div>
 
+                <!-- 赛后自学习 -->
+                <div class="collapsible" id="learnSection">
+                    <div class="collapsible-header" onclick="toggleCollapsible('learnSection')">
+                        <span class="collapsible-title">🧠 赛后自学习 (输入实际比分)</span>
+                        <span class="collapsible-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="collapsible-inner">
+                            <div class="row">
+                                <div class="form-group"><label>主队进球</label><input id="learnHScore" type="number" min="0" max="15" value="0" style="width:100%;padding:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;text-align:center"></div>
+                                <div class="form-group"><label>客队进球</label><input id="learnAScore" type="number" min="0" max="15" value="0" style="width:100%;padding:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;text-align:center"></div>
+                            </div>
+                            <button class="btn-predict" style="padding:8px;font-size:0.85rem;background:linear-gradient(90deg,#7b2cbf,#00d4ff)" onclick="doReflect()">🧠 反思学习</button>
+                            <div id="learnReport" style="font-size:0.75rem;color:#a78bfa;margin-top:6px;min-height:18px;text-align:center"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn-predict" id="predictBtn">🔮 开始预测</button>
             </div>
 
@@ -1648,6 +1666,15 @@
             const reasons = Object.entries(result.reasons).map(function(e) { return e[0] + ':' + e[1]; }).join(' | ');
             document.getElementById('psychReasons').textContent = reasons;
             document.getElementById('psychSection').classList.add('open');
+        }
+
+        function doReflect() {
+            if (!predictor || !predictor._lastPrediction) { document.getElementById('learnReport').textContent = '⚠️ 请先点击预测按钮'; return; }
+            const hScore = parseInt(document.getElementById('learnHScore').value) || 0;
+            const aScore = parseInt(document.getElementById('learnAScore').value) || 0;
+            const report = predictor.learnFromResult(hScore, aScore);
+            document.getElementById('learnReport').innerHTML = '<b>' + report.scenario + '</b> | ' + report.errorType + ' | 场景准确率:' + report.scenarioAcc + ' | ' + report.insight;
+            document.getElementById('learnSection').classList.add('open');
         }
 
         function toggleAutoRefresh() {

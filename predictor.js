@@ -1180,6 +1180,9 @@ class WorldCupPredictor {
             this._calibrationLog.shift();
         }
 
+            // 存储供赛后自学习
+        this._lastPrediction = { expectedGoals: parseFloat(clampedExpected.toFixed(2)), prediction: isOver ? '大球' : '小球', home: this.homeName, away: this.awayName, handicap: this.handicap, baseVal: parseFloat(baseVal.toFixed(2)), gapRatio: this._gapRatio || 1, tournament: this.tournament };
+
         return {
             success: true,
             modelVersion: '3.0',
@@ -1403,6 +1406,120 @@ class WorldCupPredictor {
         };
     }
 
+    // ================================================================
+    // SelfLearningEngine v2 — 生产级在线学习
+    // 场景拆分 | 误差归因 | 时序验证 | 数据衰减 | 漂移止损
+    // ================================================================
+
+    /** 场景分类: 按实力差拆分为独立场景 */
+    static classifyScenario(gapRatio, tournament) {
+        if (gapRatio > 2.2) return 'blowout';
+        if (gapRatio > 1.6) return 'moderate_gap';
+        return 'balanced';
+    }
+
+    /** 误差归因: 区分错误类型 */
+    _attributeError(predictedXG, actualTotal, baseVal, wasCorrect, attGap) {
+        const err = predictedXG - actualTotal;
+        const absErr = Math.abs(err);
+        if (absErr > 2.5 && attGap < 0.3) return 'upset';          // 爆冷
+        if (absErr > 1.5 && !wasCorrect && baseVal > 3.0) return 'base_overestimate'; // 高估进攻
+        if (absErr > 1.5 && !wasCorrect && baseVal < 2.0) return 'base_underestimate'; // 低估进攻
+        if (absErr > 1.0 && !wasCorrect) return 'factor_weight';   // 因子权重
+        if (absErr > 0.8) return 'xg_calibration';                 // xG校准
+        return wasCorrect ? 'correct' : 'edge_miss';               // 边缘失误
+    }
+
+    /** 时序衰减权重: 越旧的数据权重越低 */
+    static decayWeight(daysAgo, halflife = 90) {
+        return Math.exp(-daysAgo * Math.LN2 / halflife);
+    }
+
+    /**
+     * 赛后学习 v2 — 完整闭环
+     */
+    learnFromResult(actualHomeScore, actualAwayScore) {
+        const last = this._lastPrediction;
+        if (!last) return { insight: '⚠️ 无预测记录' };
+        const actualTotal = actualHomeScore + actualAwayScore;
+        const wasCorrect = last.prediction === (actualTotal > last.handicap ? '大球' : '小球');
+        const scenario = WorldCupPredictor.classifyScenario(last.gapRatio, last.tournament);
+
+        // 误差归因
+        const errorType = this._attributeError(last.expectedGoals, actualTotal, last.baseVal, wasCorrect, last.gapRatio);
+
+        // 场景专属参数存储
+        if (!this._scenarioParams) this._scenarioParams = {};
+        if (!this._scenarioParams[scenario]) this._scenarioParams[scenario] = { count: 0, correct: 0, xgBias: 0, gm: this.config.globalBaseMultiplier };
+
+        const sp = this._scenarioParams[scenario];
+        sp.count++;
+        if (wasCorrect) sp.correct++;
+        sp.xgBias = sp.xgBias * 0.9 + (last.expectedGoals - actualTotal) * 0.1;
+
+        // 校准日志 (带时间戳用于衰减)
+        this._calibrationLog.push({
+            ts: Date.now(), scenario, errorType, wasCorrect,
+            predictedXG: last.expectedGoals, actualTotal,
+            home: last.home, away: last.away,
+        });
+        if (this._calibrationLog.length > 500) this._calibrationLog.shift();
+
+        // 定向修正 (仅修改场景相关参数)
+        const DAY_MS = 86400000;
+        const now = Date.now();
+        const recentLogs = this._calibrationLog.filter(l => (now - l.ts) / DAY_MS < 60); // 60天内
+        const recentAcc = recentLogs.filter(l => l.wasCorrect).length / Math.max(recentLogs.length, 1);
+
+        let adjustment = 0;
+        switch (errorType) {
+            case 'base_overestimate': adjustment = -0.03; break;
+            case 'base_underscoremate': adjustment = +0.03; break;
+            case 'upset': adjustment = 0; break; // 爆冷不调参
+            case 'factor_weight': adjustment = wasCorrect ? 0 : (last.expectedGoals > actualTotal ? -0.02 : +0.02); break;
+            default: adjustment = wasCorrect ? 0 : (last.expectedGoals > actualTotal ? -0.01 : +0.01);
+        }
+
+        // 漂移止损: 连续多期低于基线则回退
+        const baselineAcc = 0.58;
+        if (recentLogs.length >= 20 && recentAcc < baselineAcc) {
+            adjustment = 0;
+            this.config.globalBaseMultiplier = this._safeParams?.globalBaseMultiplier || 1.25;
+        } else if (adjustment !== 0) {
+            // 保存安全参数
+            if (!this._safeParams) this._safeParams = { globalBaseMultiplier: this.config.globalBaseMultiplier };
+            this.config.globalBaseMultiplier = clamp(this.config.globalBaseMultiplier + adjustment, 0.95, 1.70);
+        }
+
+        // 数据衰减: 更新球队数据 (旧数据权重降低)
+        const hOld = TEAM_DATABASE[last.home]; const aOld = TEAM_DATABASE[last.away];
+        if (hOld) {
+            const hDays = (hOld._lastUpdate ? (now - hOld._lastUpdate) / DAY_MS : 30);
+            const hDecay = WorldCupPredictor.decayWeight(hDays);
+            const hRate = 0.05 * hDecay;
+            hOld.att = +(hOld.att * (1 - hRate) + actualHomeScore * hRate).toFixed(2);
+            hOld.def = +(hOld.def * (1 - hRate) + actualAwayScore * hRate).toFixed(2);
+            hOld._lastUpdate = now;
+        }
+        if (aOld) {
+            const aDays = (aOld._lastUpdate ? (now - aOld._lastUpdate) / DAY_MS : 30);
+            const aDecay = WorldCupPredictor.decayWeight(aDays);
+            const aRate = 0.05 * aDecay;
+            aOld.att = +(aOld.att * (1 - aRate) + actualAwayScore * aRate).toFixed(2);
+            aOld.def = +(aOld.def * (1 - aRate) + actualHomeScore * aRate).toFixed(2);
+            aOld._lastUpdate = now;
+        }
+
+        return {
+            wasCorrect, errorType, scenario,
+            scenarioAcc: (sp.correct / sp.count * 100).toFixed(0) + '%',
+            recentAcc: (recentAcc * 100).toFixed(0) + '%',
+            gmNow: this.config.globalBaseMultiplier.toFixed(3),
+            adjustment,
+            teamsUpdated: [last.home, last.away],
+            insight: `${scenario} | ${errorType} | 场景准确率${(sp.correct/sp.count*100).toFixed(0)}% | ${wasCorrect?'✓':'✗'} ${adjustment!==0?('调参'+adjustment.toFixed(2)):'保持'}`,
+        };
+    }
     backtest(matches) {
         if (!Array.isArray(matches) || matches.length === 0) {
             throw new ValidationError('回测需要至少1场比赛数据');
