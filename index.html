@@ -881,6 +881,20 @@
                     </div>
                 </div>
 
+                <!-- 赛事新闻信号 -->
+                <div class="collapsible" id="newsSection">
+                    <div class="collapsible-header" onclick="toggleCollapsible('newsSection')">
+                        <span class="collapsible-title">📰 赛事新闻信号</span>
+                        <span class="collapsible-icon">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="collapsible-inner">
+                            <textarea id="newsInput" placeholder="粘贴赛事新闻文本, 自动识别伤病/轮换/冲突/宿敌等信号..." style="width:100%;height:60px;padding:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;font-size:0.8rem;resize:vertical"></textarea>
+                            <div id="newsSignals" style="font-size:0.75rem;color:#60a5fa;margin-top:4px;min-height:18px"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn-predict" id="predictBtn">🔮 开始预测</button>
             </div>
 
@@ -1211,6 +1225,19 @@
                     }
 
                     if (liveData) predictor.setLiveData(liveData);
+
+                    // 新闻信号检测
+                    const newsText = document.getElementById('newsInput').value.trim();
+                    let newsResult = null;
+                    if (newsText) {
+                        const analyzer = new MatchNewsAnalyzer(newsText);
+                        newsResult = analyzer.applyTo(predictor);
+                        document.getElementById('newsSignals').textContent = newsResult.applied.length > 0
+                            ? '📡 检测到: ' + newsResult.applied.join(', ')
+                            : '未识别到有效信号';
+                    } else {
+                        document.getElementById('newsSignals').textContent = '';
+                    }
 
                     const result = predictor.predict();
                     predictionCount++;

@@ -1771,6 +1771,101 @@ class LotteryOddsAnalyzer {
     }
 }
 
+// ============================================================
+// 赛事新闻信号检测引擎 — MatchNewsAnalyzer
+// 自动扫描新闻文本, 识别关键信号并调整因子配比
+// ============================================================
+
+class MatchNewsAnalyzer {
+    // 信号规则: { pattern, target, impact, weight }
+    static SIGNALS = [
+        // 伤病/缺阵 → 球员因子
+        { pattern: /受伤|伤病|injury|伤停|缺阵|缺席|无缘|out of|ruled out|不参|未随队|落选|退出/i, target: 'player', impact: +1, weight: 0.9, desc: '球员缺阵' },
+        { pattern: /复出|回归|伤愈|恢复训练|return|fit again|复帰/i, target: 'player', impact: -1, weight: 0.7, desc: '球员复出' },
+        // 将帅冲突 → 心理士气
+        { pattern: /冲突|矛盾|不和|争吵|内讧|罢训|将帅|conflict|dispute|rift|fallout|mutiny/i, target: 'psyMorale', value:'将帅不和', weight: 0.95, desc: '内部矛盾' },
+        { pattern: /换帅|新帅|新教练|上任|new coach|new manager|appointed/i, target: 'psyMorale', value:'新帅效应', weight: 0.8, desc: '新帅上任' },
+        { pattern: /连胜|势头正盛|势不可挡|winning streak|in form|unstoppable/i, target: 'psyMorale', value:'连胜势头', weight: 0.7, desc: '连胜势头' },
+        { pattern: /连败|低迷|不胜|losing streak|slump|poor form|winless/i, target: 'psyMorale', value:'连败低迷', weight: 0.85, desc: '连败低迷' },
+        // 战意/轮换
+        { pattern: /轮换|留力|替补|reserve|rotation|rest players|squad rotation|替补出战/i, target: 'psyStake', value:'已晋级轮换', weight: 0.85, desc: '轮换留力' },
+        { pattern: /生死战|必须赢|背水一战|do or die|must win|must-win|决战|决胜/i, target: 'psyStake', value:'出线生死战', weight: 0.9, desc: '出线生死战' },
+        { pattern: /荣誉之战|为荣誉|pride|honour match|consolation/i, target: 'psyStake', value:'荣誉之战', weight: 0.7, desc: '荣誉之战' },
+        // 宿敌/德比
+        { pattern: /德比|宿敌|死敌|世仇|derby|rival|rivalry|仇敌|恩怨/i, target: 'psyHistory', value:'宿敌对决', weight: 0.9, desc: '宿敌对决' },
+        // 打平出线
+        { pattern: /打平出线|平局出线|平局晋级|draw enough|draw will do|平即可/i, target: 'psyMentality', value:'打平出线', weight: 0.9, desc: '打平出线心态' },
+        // 天气
+        { pattern: /暴雨|大雨|暴雪|台风|heatwave|热浪|extreme weather|heavy rain|snow|storm|极寒/i, target: 'infoEdge', impact: -0.5, weight: 0.6, desc: '极端天气' },
+        // 裁判
+        { pattern: /裁判|referee|争议判罚|争议判|红牌|罚下|VAR|controversial ref/i, target: 'psyExternal', value:'裁判争议', weight: 0.6, desc: '裁判关注' },
+        // 疲劳/赛程
+        { pattern: /疲劳|密集赛程|3天.*赛|背靠背|tired|fatigue|congested fixture|三天.赛/i, target: 'fatigue', impact: +2, weight: 0.7, desc: '赛程疲劳' },
+        // 战术泄露
+        { pattern: /战术泄露|首发泄露|lineup leaked|tactics leaked|训练.*曝光/i, target: 'infoEdge', impact: 0.3, weight: 0.5, desc: '战术泄露' },
+    ];
+
+    constructor(newsText) {
+        this.rawText = newsText || '';
+        this.signals = [];
+        this.adjustments = {};
+        if (this.rawText) this.analyze();
+    }
+
+    analyze(text) {
+        const txt = text || this.rawText;
+        if (!txt) return this;
+        this.signals = [];
+        this.adjustments = {};
+        for (const sig of MatchNewsAnalyzer.SIGNALS) {
+            if (sig.pattern.test(txt)) {
+                this.signals.push({ desc: sig.desc, target: sig.target, weight: sig.weight });
+                if (!this.adjustments[sig.target]) this.adjustments[sig.target] = [];
+                this.adjustments[sig.target].push(sig);
+            }
+        }
+        return this;
+    }
+
+    /** 应用检测到的信号到预测器 */
+    applyTo(predictor) {
+        if (!predictor) return { applied: [] };
+        const applied = [];
+        for (const [target, sigs] of Object.entries(this.adjustments)) {
+            const top = sigs.sort((a, b) => b.weight - a.weight)[0]; // 最强信号
+            switch (target) {
+                case 'player':
+                    const missing = sigs.filter(s => s.impact > 0).length;
+                    predictor.setPlayerMissing(missing, 0);
+                    applied.push(`球员缺阵×${missing}`);
+                    break;
+                case 'psyMorale':
+                case 'psyStake':
+                case 'psyHistory':
+                case 'psyMentality':
+                case 'psyExternal':
+                    if (top.value && predictor.psyState) {
+                        const key = target.replace('psy','').toLowerCase();
+                        predictor.psyState[key] = top.value;
+                        applied.push(top.desc);
+                    }
+                    break;
+                case 'fatigue':
+                    if (top.impact) {
+                        predictor.restDaysHome = Math.max(3, (predictor.restDaysHome || 7) - top.impact);
+                        predictor.restDaysAway = Math.max(3, (predictor.restDaysAway || 7) - top.impact);
+                        applied.push(top.desc);
+                    }
+                    break;
+                case 'infoEdge':
+                    applied.push(top.desc);
+                    break;
+            }
+        }
+        return { applied, signalCount: this.signals.length, details: this.signals };
+    }
+}
+
 // ==================== 深层合并工具 ====================
 function deepMerge(target, ...sources) {
     for (const src of sources) {
@@ -1881,6 +1976,7 @@ function getTeamList() {
 if (typeof window !== 'undefined') {
     window.WorldCupPredictor = WorldCupPredictor;
     window.LotteryOddsAnalyzer = LotteryOddsAnalyzer;
+    window.MatchNewsAnalyzer = MatchNewsAnalyzer;
     window.generateMockLiveData = generateMockLiveData;
     window.getTeamList = getTeamList;
     window.TEAM_DATABASE = TEAM_DATABASE;
