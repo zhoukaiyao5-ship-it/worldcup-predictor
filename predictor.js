@@ -995,6 +995,31 @@ class WorldCupPredictor {
             };
         }
 
+        // ====== 诚信风险检测 (积分异常, 不改变预测) ======
+        let integrityRisk = null;
+        if (this.liveData?.data_source === 'lottery' && this.liveData.lottery_expected_goals > 0) {
+            const marketXG = this.liveData.lottery_expected_goals;
+            const modelXG = clampedExpected;
+            // 标准化偏离: (模型 - 市场) / 市场, 282场均值≈0.12, std≈0.25
+            const divergence = (modelXG - marketXG) / Math.max(marketXG, 0.5);
+            const absDiv = Math.abs(divergence);
+            let level = null, warning = null;
+            if (absDiv > 0.50) {
+                level = 'high'; warning = '模型与赔率严重偏离(>50%), 建议核实数据来源';
+            } else if (absDiv > 0.30) {
+                level = 'medium'; warning = '模型与赔率显著偏离(>30%), 关注异常波动';
+            }
+            if (level) {
+                integrityRisk = {
+                    level,
+                    warning,
+                    divergence: parseFloat(divergence.toFixed(3)),
+                    modelXG: parseFloat(modelXG.toFixed(2)),
+                    marketXG: parseFloat(marketXG.toFixed(2)),
+                };
+            }
+        }
+
         // 比分分布概率和 — 用于展示, 不改变O/U判定
 
         // --- 因子详情 ---
@@ -1069,6 +1094,7 @@ class WorldCupPredictor {
             // 竞彩赔率资金流向分析 (反向指标)
             marketAnalysis: this._buildMarketAnalysis(isOver, clampedExpected, marketAnalysis),
             blowoutModel: blowoutModel,
+            integrityRisk: integrityRisk,
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
                 probability: parseFloat((s.probability * 100).toFixed(1)),

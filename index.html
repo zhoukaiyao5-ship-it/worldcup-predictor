@@ -888,6 +888,8 @@
             <div class="card">
                 <div class="card-title">📊 预测结果</div>
 
+                <div id="integrityRisk" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.8rem;color:#fca5a5;text-align:center"></div>
+
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
                     <div class="loading-text">正在分析数据...</div>
@@ -1316,6 +1318,16 @@
                 document.getElementById('marketSection').style.display = 'block';
             } else {
                 document.getElementById('marketSection').style.display = 'none';
+            }
+
+            // 诚信风险
+            const irEl = document.getElementById('integrityRisk');
+            if (data.integrityRisk) {
+                const ir = data.integrityRisk;
+                irEl.style.display = 'block';
+                irEl.innerHTML = '<span style="color:#f87171">⚠</span> ' + ir.warning;
+            } else {
+                irEl.style.display = 'none';
             }
 
             // 信息差
