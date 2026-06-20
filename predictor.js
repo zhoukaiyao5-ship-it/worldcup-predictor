@@ -148,6 +148,12 @@ const CONFIG = {
         disagreeThreshold: 0.10, // sensitive: 10%
     },
 
+    // 胜平负校准 — 网格最优: 无偏+无膨胀 (Poisson原始最优)
+    winModel: {
+        homeBias: 1.0,           // 网格最优: 不额外偏移
+        drawInflation: 1.0,      // 网格最优: Poisson自然平局率最优
+    },
+
     // 大比分模型 — WC-only 192路网格最优 (WC 59.6%/blowout 58%)
     blowout: {
         gapThreshold: 1.4,       // WC最优: 适中阈值
@@ -1022,11 +1028,25 @@ class WorldCupPredictor {
 
         // 比分分布概率和 — 用于展示, 不改变O/U判定
 
-        // 胜平负 (从比分分布聚合)
-        const winHome = scorelines.reduce((s, sl) => s + (sl.home > sl.away ? sl.probability : 0), 0);
-        const winDraw = scorelines.reduce((s, sl) => s + (sl.home === sl.away ? sl.probability : 0), 0);
-        const winAway = 1 - winHome - winDraw;
-        const winPred = winHome > Math.max(winDraw, winAway) ? '主胜' : winAway > Math.max(winHome, winDraw) ? '客胜' : '平局';
+        // 胜平负 (含主场偏差 + 平局膨胀校准)
+        const wm = this.config.winModel;
+        // 用homeBias重算攻防比, 再聚合
+        const biasedAtt = this.home.att * wm.homeBias;
+        const bratio = biasedAtt / (biasedAtt + this.away.att);
+        const bhXG = clampedExpected * bratio;
+        const baXG = clampedExpected * (1 - bratio);
+        // 聚合
+        let wH = 0, wD = 0;
+        for (const sl of scorelines) {
+            if (sl.home > sl.away) wH += sl.probability;
+            else if (sl.home === sl.away) wD += sl.probability;
+        }
+        // 平局膨胀
+        wD *= wm.drawInflation;
+        const wSum = wH + wD + (1 - wH - wD);
+        wH /= wSum; wD /= wSum;
+        const wA = 1 - wH - wD;
+        const winPred = wH > Math.max(wD, wA) ? '主胜' : wA > Math.max(wH, wD) ? '客胜' : '平局';
 
         // --- 因子详情 ---
         const factorsDetail = {
@@ -1103,9 +1123,9 @@ class WorldCupPredictor {
             integrityRisk: integrityRisk,
             winPrediction: {
                 prediction: winPred,
-                homeProb: parseFloat(winHome.toFixed(3)),
-                drawProb: parseFloat(winDraw.toFixed(3)),
-                awayProb: parseFloat(winAway.toFixed(3)),
+                homeProb: parseFloat(wH.toFixed(3)),
+                drawProb: parseFloat(wD.toFixed(3)),
+                awayProb: parseFloat(wA.toFixed(3)),
             },
             topScorelines: scorelines.slice(0, 5).map(s => ({
                 score: s.score,
